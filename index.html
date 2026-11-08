@@ -332,7 +332,6 @@ const VIEWS=[
  ['mes','Contas do mês','M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9'],
  ['previsao','Próximo mês','M3 17l6-6 4 4 8-8M14 7h7v7'],
  ['empresa','Empresa · caixa','M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6'],
- ['impostos','Impostos','M19 5L5 19M7.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm9 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'],
  ['metas','Reserva e metas','M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-5a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
  ['historico','Histórico','M3 3v18h18M7 15l4-4 3 3 5-6'],
  ['-','Detalhes'],
@@ -340,6 +339,7 @@ const VIEWS=[
  ['lancamentos','Lançamentos','M4 6h16M4 12h16M4 18h10'],
  ['fixas','Contas fixas','M12 8v4l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z'],
  ['cartoes','Cartões','M3 6h18v12H3zM3 10h18'],
+ ['impostos','Impostos','M19 5L5 19M7.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm9 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z'],
  ['ajustes','Ajustes','M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm7.4-3a7.4 7.4 0 0 0-.1-1.2l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-2-1.2L14.5 3h-5l-.4 2.6a7.6 7.6 0 0 0-2 1.2l-2.4-1-2 3.4 2 1.6a7.4 7.4 0 0 0 0 2.4l-2 1.6 2 3.4 2.4-1a7.6 7.6 0 0 0 2 1.2l.4 2.6h5l.4-2.6a7.6 7.6 0 0 0 2-1.2l2.4 1 2-3.4-2-1.6c.1-.4.1-.8.1-1.2z']
 ];
 const DEFAULT_CFG={versao:1,regime:'MEI',limitePJ:81000,tolerancia:20,pjAnterior:{},pjAnteriorNota:'',
@@ -846,23 +846,26 @@ function vMetas(){const C=cfg(),mg=mediaGastosPF(S.month);
 /* ---------- AJUSTES DE NOVEMBRO: GenioDesk na PJ, Wise no CPF ---------- */
 function precisaMig2(){const C=cfg();if(!S.cfg||(C.mig&&C.mig.v2))return false;return C.clientes.some(k=>k.id==='geniodesk'||k.id==='infinity')}
 function mig2Banner(){if(!precisaMig2())return '';
-  return `<div class="banner"><div><b>Aplicar suas respostas</b><div class="small muted">A GenioDesk passa a pagar na conta da empresa a partir de dezembro, e você tira R$ 9.000 por mês de retirada fixa. A Wise fica no seu CPF, então o dinheiro da Infinity passa a ser seu (PF), e o repasse de R$ 500 sai em euro direto da Wise.</div></div><button class="btn pri" data-act="mig-v2">Aplicar</button></div>`}
+  return `<div class="banner"><div><b>Wise no seu CPF</b><div class="small muted">O dinheiro da Infinity passa a contar como seu (PF), separado dos reais, e o repasse de R$ 500 sai em euro direto da Wise.</div></div><button class="btn pri" data-act="mig-v2">Aplicar</button></div>`}
 function migrarV2(){const C=S.cfg;if(!(C.mig&&C.mig.wise))migrarWise(true);
   const ini=addM(curYM,1),touched=new Set();
   const w=(C.contas||[]).find(c=>c.id===WISE);if(w)w.ent='PF';
   for(const c of ['Repasses','Custo de câmbio'])if(!C.categorias.PF.despesa.includes(c))C.categorias.PF.despesa.push(c);
-  const g=C.clientes.find(k=>k.id==='geniodesk');if(g){g.ent='PJ';g.tipo='Cliente recorrente'}
   const inf=C.clientes.find(k=>k.id==='infinity');if(inf){inf.ent='PF';inf.teto=false;inf.notaModo='nenhuma'}
   for(const r of C.recorrentes){
-    if(r.cliente==='geniodesk'&&r.tipo==='receita'){r.ent='PJ';r.conta='pj';r.cat='Clientes recorrentes';r.desc='GenioDesk'}
     if(r.conta===WISE){r.ent='PF';r.cat=r.tipo==='receita'?'Freela na PF':(r.cat==='Repasses'?'Repasses':r.cat)}}
   for(const m of Object.keys(S.meses)){const d=S.meses[m];if(!d||!d.itens)continue;
     for(const x of d.itens){
-      if(m>=ini&&x.cliente==='geniodesk'&&x.tipo==='receita'&&x.status!=='pago'){x.ent='PJ';x.conta='pj';x.cat='Clientes recorrentes';x.desc='GenioDesk';touched.add(m)}
       if(m>=curYM&&x.conta===WISE&&x.tipo!=='transf'&&x.ent!=='PF'){x.ent='PF';x.cat=x.tipo==='receita'?'Freela na PF':(x.cat==='Repasses'?'Repasses':x.cat);touched.add(m)}}}
-  C.proLabore=C.proLabore||{};C.proLabore.fixo=9000;if(!C.proLabore.inicio||C.proLabore.inicio<ini)C.proLabore.inicio=ini;
-  C.mig=Object.assign({},C.mig,{wise:true,v2:true});saveCfg();touched.forEach(saveMonth);S._keepScroll=true;render();
-  toast('Pronto: GenioDesk na empresa a partir de '+mLabel(ini).toLowerCase()+', retirada fixa de R$ 9.000 e Wise no seu CPF.')}
+  C.mig=Object.assign({},C.mig,{wise:true,v2:true,v3:true});saveCfg();touched.forEach(saveMonth);S._keepScroll=true;render();
+  toast('Pronto: a Wise agora é sua (PF) e o repasse sai em euro.')}
+// GenioDesk volta para a PF (pedido de 08/11): desfaz o que a versão anterior do botão tinha mudado
+function migrarV3(){const C=S.cfg;if(!C||!(C.mig&&C.mig.v2)||C.mig.v3)return;const ini=addM(curYM,1),touched=new Set();
+  const g=C.clientes.find(k=>k.id==='geniodesk');if(g){g.ent='PF';g.tipo='Salário'}
+  for(const r of C.recorrentes)if(r.cliente==='geniodesk'&&r.tipo==='receita'){r.ent='PF';r.conta='pf';r.cat='Salário';r.desc='Salário GenioDesk'}
+  for(const m of Object.keys(S.meses)){if(m<ini)continue;const d=S.meses[m];if(!d||!d.itens)continue;for(const x of d.itens)if(x.cliente==='geniodesk'&&x.tipo==='receita'&&x.status!=='pago'){x.ent='PF';x.conta='pf';x.cat='Salário';x.desc='Salário GenioDesk';touched.add(m)}}
+  if(C.proLabore&&Number(C.proLabore.fixo)===9000)C.proLabore.fixo=2000;
+  C.mig.v3=true;saveCfg();touched.forEach(saveMonth);setTimeout(()=>toast('GenioDesk voltou a contar como salário na PF, e a retirada fixa voltou para R$ 2.000.'),300)}
 const wisePJ=()=>temWise()&&cfg().recorrentes.some(r=>r.conta===WISE&&r.ent==='PJ');
 function wiseCardPF(){if(!temWise()||wisePJ())return '';const wE=saldoWiseEur();
   const R=cfg().recorrentes.filter(r=>r.conta===WISE&&r.ativo!==false),ent=sum(R.filter(r=>r.tipo==='receita'),r=>r.valor),sai=sum(R.filter(r=>r.tipo==='despesa'),r=>r.valor);
@@ -884,9 +887,10 @@ function irAnual(rend,inss){if(rend<=0)return 0;const ded=Math.max(inss,Math.min
   const f=TAX.IRA.find(x=>base<=x[0]);let ir=Math.max(0,base*f[1]-f[2]);
   const red=rend<=60000?ir:rend<=88200?Math.max(0,8429.73-.095575*rend):0;return Math.max(0,ir-red)}
 function impCfg(){const C=cfg(),I=C.imp||{};const rs=C.recorrentes.filter(r=>r.ativo!==false&&r.tipo==='receita');
-  const pjRec=sum(rs.filter(r=>r.ent==='PJ'&&r.conta!==WISE&&r.cliente!=='infinity'),r=>r.valor)+(precisaMig2()?sum(rs.filter(r=>r.cliente==='geniodesk'&&r.ent==='PF'),r=>r.valor):0);
+  const ehPJ=r=>r.cliente!=='infinity'&&r.conta!==WISE&&(r.ent==='PJ'||(r.cliente&&cliente(r.cliente)&&notaDe(cliente(r.cliente)).teto));
+  const pjRec=sum(rs.filter(ehPJ),r=>r.valor),comoPF=sum(rs.filter(r=>ehPJ(r)&&r.ent==='PF'),r=>r.valor);
   const inf=sum(rs.filter(r=>r.cliente==='infinity'),r=>r.valor);
-  return {pj:I.pj!=null?Number(I.pj):pjRec,inf:I.inf!=null?Number(I.inf):inf,ret:I.ret!=null?Number(I.ret):(retiradaFixa()>2000?retiradaFixa():9000),
+  return {pj:I.pj!=null?Number(I.pj):pjRec,inf:I.inf!=null?Number(I.inf):inf,ret:I.ret!=null?Number(I.ret):retiradaFixa()+comoPF,
     anexo:I.anexo||'fatorR',contador:I.contador!=null?Number(I.contador):400,cnae:I.cnae||'',repasse:sum(C.recorrentes.filter(r=>r.conta===WISE&&r.tipo==='despesa'&&r.ativo!==false),r=>r.valor),custos:Math.max(0,custoFixoPJ()-sum(C.recorrentes.filter(r=>r.ent==='PJ'&&r.tipo==='despesa'&&/DAS/i.test(r.desc||'')),r=>r.valor))}}
 function impCenario(P,o){// o: {pl, infPJ}
   const infPJ=o.infPJ?P.inf:0,infPF=o.infPJ?0:P.inf,rbt=(P.pj+infPJ)*12;
@@ -930,7 +934,7 @@ function vImpostos(){const C=cfg(),P=impCfg();
     <form data-form="imp">
      <div class="two"><div class="fld"><label for="i-pj">A empresa recebe por mês</label><input id="i-pj" name="pj" inputmode="decimal" value="${numIn(P.pj)}"></div>
      <div class="fld"><label for="i-inf">Infinity por mês (em reais)</label><input id="i-inf" name="inf" inputmode="decimal" value="${numIn(P.inf)}"></div></div>
-     <p class="hint" style="margin:-4px 0 10px">Conta tudo que cai na conta da empresa, com ou sem nota. A Elohim deposita R$ 3.800, então entram os R$ 3.800, não só os R$ 1.900 da nota.</p>
+     <p class="hint" style="margin:-4px 0 10px">Para o imposto, a GenioDesk conta como empresa porque a nota sai pelo CNPJ, mesmo aparecendo como salário no resto do sistema. A retirada aqui é o salário da GenioDesk mais a retirada fixa. Conta tudo que cai na conta da empresa, com ou sem nota. A Elohim deposita R$ 3.800, então entram os R$ 3.800, não só os R$ 1.900 da nota.</p>
      <div class="two"><div class="fld"><label for="i-ret">Sua retirada por mês</label><input id="i-ret" name="ret" inputmode="decimal" value="${numIn(P.ret)}"></div>
      <div class="fld"><label for="i-cont">Contador por mês</label><input id="i-cont" name="contador" inputmode="decimal" value="${numIn(P.contador)}"></div></div>
      <div class="two"><div class="fld"><label for="i-anx">Atividade da empresa</label><select id="i-anx" name="anexo">
@@ -1137,7 +1141,7 @@ document.addEventListener('click',e=>{const h=e.target.closest('.hlp');if(!h)ret
 
 /* ---------- render ---------- */
 function renderNav(){$('#nav').innerHTML=VIEWS.map(([id,l,d])=>id==='-'?`<div class="navsep">${l}</div>`:`<a href="#${id}" class="${S.view===id?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg><span>${l}</span></a>`).join('')}
-function render(){renderNav();setSave();const el=$('#main');
+function render(){if(S.cfg&&S.cfg.mig&&S.cfg.mig.v2&&!S.cfg.mig.v3)migrarV3();renderNav();setSave();const el=$('#main');
   if(S.err==='login'){el.innerHTML=loginView();return}
   if(S.err){el.innerHTML=`<div class="state"><h2>Não foi possível abrir seus dados</h2><p>${S.err==='nodb'?'Não foi possível carregar o sistema. Confira a internet e recarregue a página.':'O banco de dados respondeu com um erro ('+esc(S.err)+'). Recarregue a página em alguns instantes.'}</p></div>`;return}
   if(!S.ready){el.innerHTML=`<div class="state"><h2>${S.slow?'Ainda tentando conectar…':'Carregando suas finanças…'}</h2>${S.slow?'<p>Seus dados ainda não chegaram. Confira a internet; a página continua tentando sozinha.</p>':''}</div>`;return}
