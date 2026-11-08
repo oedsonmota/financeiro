@@ -346,8 +346,8 @@ const cliente=id=>cfg().clientes.find(c=>c.id===id);
 const meta=id=>cfg().metas.find(x=>x.id===id);
 function contaNome(id){const c=cfg().contas.find(x=>x.id===id)||cfg().cartoes.find(x=>x.id===id);return c?c.nome:(id||'—')}
 const isCard=id=>cfg().cartoes.some(c=>c.id===id);
-function lugarNome(v){if(v==='PF')return 'PF';if(v==='PJ')return 'PJ';if(String(v).startsWith('meta:')){const g=meta(v.slice(5));return g?g.nome:'Meta'}return v}
-function entDe(v){if(v==='PF'||v==='PJ')return v;const g=String(v).startsWith('meta:')&&meta(v.slice(5));return g?g.ent:'PF'}
+function lugarNome(v){if(v==='PF')return 'PF';if(v==='PJ')return 'PJ';if(v==='wise')return 'Wise (euro)';if(String(v).startsWith('meta:')){const g=meta(v.slice(5));return g?g.nome:'Meta'}return v}
+function entDe(v){if(v==='PF'||v==='PJ')return v;if(v==='wise')return 'PJ';const g=String(v).startsWith('meta:')&&meta(v.slice(5));return g?g.ent:'PF'}
 
 function calc(m,esc){
   const it=itens(m), inE=x=>esc==='tudo'||x.ent===esc;
@@ -371,10 +371,34 @@ function serie(m){
   const h=S.hist[m];return h?{r:h.r||0,g:h.g||0,src:'planilha'}:null;
 }
 function metaSaldo(g){let s=Number(g.saldoIni)||0;const ts=g.saldoTs||0;for(const m in S.meses){for(const x of itens(m)){if(x.tipo!=='transf'||x.hist)continue;if(ts&&!(x.pagoEm>ts))continue;if(x.para==='meta:'+g.id)s+=Number(x.valor)||0;if(x.de==='meta:'+g.id)s-=Number(x.valor)||0}}return s}
+const WISE='wise';
+function cot(){return Number(S.cotLive)||Number((cfg().cambio||{}).EUR)||5.6}
+const isWise=x=>x&&x.conta===WISE;
+const temWise=()=>(cfg().contas||[]).some(c=>c.id===WISE);
+function eurOf(x){return x.eur!=null?Number(x.eur)||0:(Number(x.valor)||0)/cot()}
+function saldoWiseEur(){const sd=cfg().saldos;if(!sd||!sd.wise)return null;let e=Number(sd.wise.eur)||0;const ts=sd.ts||0;
+  for(const m in S.meses)for(const x of itens(m)){if(!(x.pagoEm>ts))continue;
+    if(x.tipo==='transf'){if(x.de===WISE)e-=eurOf(x);if(x.para===WISE)e+=eurOf(x);continue}
+    if(x.status!=='pago'||!isWise(x))continue;if(x.tipo==='receita')e+=eurOf(x);if(x.tipo==='despesa')e-=eurOf(x)}return e}
+const eur0=v=>'€ '+(Number(v)||0).toLocaleString('pt-BR',{maximumFractionDigits:0});
+function fixosPJ(wise){const R=cfg().recorrentes.filter(r=>r.ent==='PJ'&&r.ativo!==false&&recParc(r,curYM)!==false&&(!!wise===(r.conta===WISE)));return {rec:sum(R.filter(r=>r.tipo==='receita'),r=>r.valor),desp:sum(R.filter(r=>r.tipo==='despesa'),r=>r.valor)}}
+function migrarWise(){const C=S.cfg;C.contas=C.contas||[];if(!C.contas.some(c=>c.id===WISE))C.contas.push({id:WISE,nome:'Wise (euro)',ent:'PJ',moeda:'EUR'});
+  for(const c of ['Repasses','Custo de câmbio'])if(!C.categorias.PJ.despesa.includes(c))C.categorias.PJ.despesa.push(c);
+  C.cambio=C.cambio||{EUR:Math.round(cot()*100)/100};
+  const ri=C.recorrentes.find(r=>r.cliente==='infinity'&&r.tipo==='receita');if(ri){ri.valor=2500;ri.conta=WISE}
+  if(!C.recorrentes.some(r=>r.id==='r-repinf'))C.recorrentes.push({id:'r-repinf',desc:'Repasse Infinity',ent:'PJ',tipo:'despesa',cat:'Repasses',valor:500,dia:10,conta:WISE,cliente:'infinity',ativo:true});
+  const touched=[];
+  for(const m of Object.keys(S.meses).sort()){const d=S.meses[m];if(!d||!d.itens)continue;const rec=d.itens.find(x=>x.tipo==='receita'&&(x.cliente==='infinity'||/infinity/i.test(x.desc||'')));if(!rec||Number(rec.valor)!==2000)continue;
+    rec.valor=2500;rec.cliente='infinity';if(m>=curYM)rec.conta=WISE;
+    if(!d.itens.some(x=>x.recId==='r-repinf'||x.mig==='repinf')){const it={id:uid('l'),dia:rec.dia||10,desc:'Repasse Infinity',valor:500,tipo:'despesa',ent:'PJ',cat:'Repasses',conta:m>=curYM?WISE:'pj',cliente:'infinity',status:rec.status==='pago'?'pago':'pendente',mig:'repinf'};if(m>=curYM)it.recId='r-repinf';d.itens.push(it)}
+    touched.push(m)}
+  C.mig=Object.assign({},C.mig,{wise:true});saveCfg();touched.forEach(saveMonth);S._keepScroll=true;render();toast('Infinity atualizada em '+touched.length+' meses. Informe quanto tem na Wise em "Atualizar saldos".')}
+function migBanner(){const C=cfg();if(!S.cfg||(C.mig&&C.mig.wise)||!C.clientes.some(k=>k.id==='infinity'))return '';
+  return `<div class="banner"><div><b>Infinity em euro na Wise</b><div class="small muted">A Infinity paga o equivalente a R$ 2.500 em euro, R$ 500 vão para um repasse e R$ 2.000 ficam para você. Atualizo os meses desde que ela começou, e a Wise passa a ter saldo próprio, separado dos reais.</div></div><button class="btn pri" data-act="mig-wise">Atualizar</button></div>`}
 function saldoConta(ent){const sd=cfg().saldos;if(!sd||!sd[ent])return null;let s=Number(sd[ent].valor)||0;const ts=sd.ts||0;
   for(const m in S.meses)for(const x of itens(m)){if(!(x.pagoEm>ts))continue;const v=Number(x.valor)||0;
     if(x.tipo==='transf'){if(x.de===ent)s-=v;if(x.para===ent)s+=v;continue}if(x.status!=='pago')continue;
-    if(x.tipo==='receita'&&x.ent===ent)s+=v;if(x.tipo==='despesa'&&x.ent===ent)s-=v}return s}
+    if(isWise(x))continue;if(x.tipo==='receita'&&x.ent===ent)s+=v;if(x.tipo==='despesa'&&x.ent===ent)s-=v}return s}
 function custoFixoPJ(){return sum(cfg().recorrentes.filter(r=>r.ent==='PJ'&&r.tipo==='despesa'&&r.ativo!==false&&recParc(r,curYM)!==false),r=>r.valor)}
 function receitaFixaPJ(){return sum(cfg().recorrentes.filter(r=>r.ent==='PJ'&&r.tipo==='receita'&&r.ativo!==false),r=>r.valor)}
 function alvoCaixaPJ(){return Math.round(custoFixoPJ()*((cfg().caixaPJ||{}).meses||3)/100)*100}
@@ -538,6 +562,7 @@ function partidaCard(edit){const C=cfg(),sd=C.saldos,g=reservaMeta();const cf=cu
   <form data-form="partida" class="grid" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));align-items:end">
    <div class="fld"><label for="p-pf">Na sua conta do dia a dia</label><input id="p-pf" name="pf" inputmode="decimal" placeholder="ex.: 3.200,00" value="${sd&&sd.PF?numIn(saldoConta('PF')):''}" required></div>
    <div class="fld"><label for="p-res">Guardado (reserva, poupança)</label><input id="p-res" name="res" inputmode="decimal" placeholder="ex.: 15.000,00" value="${g?numIn(metaSaldo(g)):''}"></div>
+   ${temWise()?`<div class="fld"><label for="p-wise">Na Wise (em euro)</label><input id="p-wise" name="wise" inputmode="decimal" placeholder="€ 0,00" value="${saldoWiseEur()!=null?numIn(saldoWiseEur()):''}"></div>`:''}
    <div class="fld"><label for="p-pj">Numa conta só da empresa (se tiver)</label><input id="p-pj" name="pj" inputmode="decimal" placeholder="0,00" value="${sd&&sd.PJ?numIn(saldoConta('PJ')):''}"></div>
    <div class="fld" style="grid-column:1/-1"><label>Como a empresa começa</label>
     <label class="inline small"><input type="radio" name="opt" value="colchao" ${!sd?'checked':''}> <span><b>Recomendado:</b> tudo o que você tem fica na PF, e a empresa recebe um colchão de <input name="colchao" value="${numIn(Math.max(500,Math.round(sum(C.recorrentes.filter(r=>r.ent==='PJ'&&r.tipo==='despesa'&&r.dia<9&&r.ativo!==false),r=>r.valor)/100)*100+300))}" inputmode="decimal" style="width:96px;padding:3px 6px;border:1px solid var(--line-2);border-radius:6px" aria-label="Valor do colchão"> tirado da conta do dia a dia, para pagar as ferramentas que cobram antes dos clientes pagarem.</span></label>
@@ -595,10 +620,10 @@ function vInicio(){const m=S.month,C=cfg(),c=calc(m,'tudo'),cp=calc(m,'PJ'),cf=c
   const pend=itens(m).filter(x=>x.tipo==='despesa'&&x.status!=='pago'),atr=pend.filter(x=>statusOf(x,m)==='atrasado');
   const alvo=alvoCaixaPJ(),ins=insights(m);
   const lucro=cp.rec-cp.desp,fixo=retiradaDoMes(m);
-  return header(`Olá, Edson`,`${mLabel(m)} · o que importa agora`,monthCtl())+importBanner()+(!C.saldos?partidaCard():'')+
+  return header(`Olá, Edson`,`${mLabel(m)} · o que importa agora`,monthCtl())+importBanner()+migBanner()+(!C.saldos?partidaCard():'')+
   `<div class="grid g4 tiles">
    ${tile(`Vai sobrar em ${MES3[Number(m.slice(5))-1]}`,brl0(sobra),`entrou ${brl0(c.rec-c.aReceber)} · saiu ${brl0(c.desp-c.aPagar)}`,sobra>=0?'t-good':'t-crit')}
-   ${tile('Caixa da empresa',sPJ==null?'—':brl0(sPJ),sPJ==null?'informe o saldo acima':`meta: ${brl0(alvo)} (3 meses de custos)`,sPJ!=null&&sPJ<custoFixoPJ()?'t-crit':'',sPJ!=null&&alvo?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,sPJ/alvo*100))}%"></i></div>`:'')}
+   ${tile('Caixa da empresa',sPJ==null?'—':brl0(sPJ),sPJ==null?'informe o saldo acima':(saldoWiseEur()!=null?`+ ${eur0(saldoWiseEur())} na Wise (≈ ${brl0(saldoWiseEur()*cot())})`:`meta: ${brl0(alvo)} (3 meses de custos)`),sPJ!=null&&sPJ<custoFixoPJ()?'t-crit':'',sPJ!=null&&alvo?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,sPJ/alvo*100))}%"></i></div>`:'')}
    ${tile('Reserva pessoal',brl0(res),mg?`cobre ${(res/mg).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} meses do seu custo de vida (${brl0(mg)}/mês)`:'',mg&&res/mg<3?'t-warn':'')}
    ${tile('Falta pagar',brl0(sum(pend,x=>x.valor)),pend.length?`${pend.length} ${pend.length>1?'contas':'conta'}${atr.length?` · <b class="neg">${atr.length} atrasada${atr.length>1?'s':''}</b>`:''}`:'tudo pago',atr.length?'t-crit':'',`<a class="tlink" href="#mes">Marcar contas →</a>`)}
   </div>
@@ -694,19 +719,21 @@ function vEmpresa(){const m=S.month,y=m.slice(0,4),C=cfg(),c=calc(m,'PJ'),lucro=
   const sPJ=saldoConta('PJ'),cf=custoFixoPJ(),rf=receitaFixaPJ(),alvo=alvoCaixaPJ(),fixo=retiradaFixa();
   // fluxo de caixa: 3 meses antes, mês atual, 3 projetados
   const rows=[];for(let i=-3;i<=0;i++){const k=addM(curYM,i),q=calc(k,'PJ');rows.push({k,ent:q.rec,sai:q.desp,ret:q.retir,real:true})}
-  let fim=null;if(sPJ!=null){const q=calc(curYM,'PJ');fim=sPJ+q.aReceber-q.aPagar-Math.max(0,retiradaDoMes(curYM)-q.retir)}
-  const proxF=[];let run=fim;for(let i=1;i<=3;i++){const k=addM(curYM,i);const rk=retiradaDoMes(k);run=run==null?null:run+rf-cf-rk;proxF.push({k,ent:rf,sai:cf,ret:rk,fim:run})}
+  const fB=fixosPJ(false),fW=fixosPJ(true),wE=saldoWiseEur(),falta=Math.max(0,cf>0?(fB.desp+fixo-fB.rec):0);
+  let fim=null;if(sPJ!=null){const q=calc(curYM,'PJ'),ic=itens(curYM);const pR=sum(ic.filter(x=>x.tipo==='receita'&&x.ent==='PJ'&&x.status!=='pago'&&!isWise(x)),x=>x.valor),pD=sum(ic.filter(x=>x.tipo==='despesa'&&x.ent==='PJ'&&x.status!=='pago'&&!isWise(x)),x=>x.valor);fim=sPJ+pR-pD-Math.max(0,retiradaDoMes(curYM)-q.retir)}
+  const proxF=[];let run=fim,runW=wE;for(let i=1;i<=3;i++){const k=addM(curYM,i);const rk=retiradaDoMes(k);const cv=temWise()?Math.max(0,fB.desp+rk-fB.rec):0;run=run==null?null:run+fB.rec+cv-fB.desp-rk;runW=runW==null?null:runW+(fW.rec-fW.desp-cv)/cot();proxF.push({k,ent:fB.rec+cv,cv,sai:fB.desp,ret:rk,fim:run,w:runW})}
+  const conv=[];for(const k of Object.keys(S.meses).sort().reverse())for(const x of itens(k))if(x.tipo==='transf'&&x.de===WISE)conv.push([k,x]);
   const it=itens(m),cl=C.clientes.filter(k=>k.ent==='PJ');
   const rowsC=cl.map(k=>{const r=sum(it.filter(x=>x.tipo==='receita'&&x.cliente===k.id),x=>x.valor),d=sum(it.filter(x=>x.tipo==='despesa'&&x.cliente===k.id),x=>x.valor);return {k,r,d,mg:r-d}});
   const semCli=sum(it.filter(x=>x.tipo==='despesa'&&x.ent==='PJ'&&!x.cliente),x=>x.valor);
   const bars=[];for(let i=1;i<=12;i++){const ym=y+'-'+String(i).padStart(2,'0');bars.push({ym,v:itens(ym).length?calc(ym,'PJ').rec:null})}
   const extra=fim!=null?Math.max(0,fim-alvo):0;
   return header('Empresa · caixa',`${C.regime==='MEI'?'MEI':esc(C.regime)} · o dinheiro da empresa, separado do seu`,monthCtl()+'<button class="btn pri" data-act="retirada">Registrar retirada</button>')+
-  (!C.saldos?partidaCard():'')+
-  `<div class="grid g4 tiles">${tile('Caixa da empresa hoje',sPJ==null?'—':brl0(sPJ),sPJ==null?'informe o ponto de partida acima':`meta: ${brl0(alvo)}`,sPJ!=null&&sPJ<cf?'t-crit':'',sPJ!=null&&alvo?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,sPJ/alvo*100))}%"></i></div>`:'')}
-   ${tile('Previsão no fim do mês',fim==null?'—':brl0(fim),'depois de receber, pagar o que falta e fazer sua retirada',fim!=null&&fim<cf?'t-warn':'')}
+  (!C.saldos?partidaCard():'')+migBanner()+
+  `<div class="grid g4 tiles">${tile('Caixa da empresa hoje (reais)',sPJ==null?'—':brl0(sPJ),sPJ==null?'informe o ponto de partida acima':`meta: ${brl0(alvo)}`,sPJ!=null&&sPJ<cf?'t-crit':'',sPJ!=null&&alvo?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,sPJ/alvo*100))}%"></i></div>`:'')}
+   ${tile('Previsão no fim do mês',fim==null?'—':brl0(fim),fim!=null&&fim<0&&temWise()?`converta ≈ ${eur0(-fim/cot())} da Wise para fechar o mês`:'depois de receber, pagar o que falta e fazer sua retirada',fim!=null&&fim<cf?'t-warn':'')}
    ${tile('Lucro em '+MES3[Number(m.slice(5))-1],brl0(lucro),c.rec?`margem de ${pct(lucro/c.rec)}`:'',lucro>=0?'t-good':'t-crit')}
-   ${tile('Custo fixo da empresa',brl0(cf)+'/mês',`receita fixa: ${brl0(rf)}/mês`)}</div>
+   ${temWise()?tile('Wise (euro)',wE==null?'—':eur0(wE),wE==null?'informe o saldo em "Atualizar saldos"':`≈ ${brl0(wE*cot())} na cotação de R$ ${numIn(cot())}`):tile('Custo fixo da empresa',brl0(cf)+'/mês',`receita fixa: ${brl0(rf)}/mês`)}</div>
   <div class="grid g2" style="margin-top:14px">
    <div class="card"><div class="card-h"><h2>Regras do caixa</h2><span class="meta">simples e sempre iguais</span></div>
     <ol class="rules"><li>Clientes pagam na <b>conta da empresa</b>.</li><li>A empresa paga freelas, ferramentas e impostos.</li><li>Uma vez por mês, você tira um valor <b>fixo</b> para a PF: é o seu salário da empresa.</li><li>O resto fica guardado na empresa até juntar <b>${(C.caixaPJ||{}).meses||3} meses de custos</b> (${brl0(alvo)}). Passou disso, o excedente pode virar retirada extra.</li></ol>
@@ -714,12 +741,17 @@ function vEmpresa(){const m=S.month,y=m.slice(0,4),C=cfg(),c=calc(m,'PJ'),lucro=
     ${fim!=null?`<p class="hint" style="margin-top:10px">${extra>0?`Com o caixa acima da meta, sobram ${brl0(extra)} que você pode retirar a mais este mês.`:`Hoje sobra para a empresa ${brl0(Math.max(0,rf-cf-fixo))} por mês depois da sua retirada fixa. ${rf-cf-fixo>0&&sPJ<alvo?`Nesse ritmo, o caixa chega à meta em ~${Math.ceil((alvo-Math.max(0,fim))/(rf-cf-fixo))} meses.`:''}`}</p>`:''}
     ${C.saldos?'<button class="btn sm ghost" data-act="partida-edit">Atualizar saldos</button>':''}${S.editPartida?partidaCard(true):''}</div>
    <div class="card"><div class="card-h"><h2>Fluxo de caixa da empresa</h2><span class="meta">últimos meses e próximos 3</span></div>
-    <div class="table-wrap"><table><thead><tr><th>Mês</th><th class="num">Entrou</th><th class="num">Saiu</th><th class="num">Sua retirada</th><th class="num">Saldo</th></tr></thead><tbody>
-    ${rows.map(r=>`<tr><td>${mShort(r.k)}${r.k===curYM?' <span class="badge b-PJ">agora</span>':''}</td><td class="num">${brl0(r.ent)}</td><td class="num">− ${brl0(r.sai)}</td><td class="num">${r.ret?'− '+brl0(r.ret):'—'}</td><td class="num">${r.k===curYM&&sPJ!=null?`<b>${brl0(sPJ)}</b> <small class="muted">hoje</small>`:'<span class="muted">—</span>'}</td></tr>`).join('')}
-    ${proxF.map(r=>`<tr class="proj"><td>${mShort(r.k)} <small class="muted">previsto</small></td><td class="num">${brl0(r.ent)}</td><td class="num">− ${brl0(r.sai)}</td><td class="num">− ${brl0(r.ret)}</td><td class="num">${r.fim==null?'—':`<b class="${r.fim<0?'neg':''}">${brl0(r.fim)}</b>`}</td></tr>`).join('')}
-    </tbody></table></div><p class="hint">Meses passados mostram o que entrou e saiu. O saldo começa a contar a partir do ponto de partida que você informou. A previsão usa as contas fixas e a retirada fixa.</p></div>
+    <div class="table-wrap"><table><thead><tr><th>Mês</th><th class="num">Entrou</th><th class="num">Saiu</th><th class="num">Sua retirada</th><th class="num">Saldo</th>${temWise()?'<th class="num">Wise</th>':''}</tr></thead><tbody>
+    ${rows.map(r=>`<tr><td>${mShort(r.k)}${r.k===curYM?' <span class="badge b-PJ">agora</span>':''}</td><td class="num">${brl0(r.ent)}</td><td class="num">− ${brl0(r.sai)}</td><td class="num">${r.ret?'− '+brl0(r.ret):'—'}</td><td class="num">${r.k===curYM&&sPJ!=null?`<b>${brl0(sPJ)}</b> <small class="muted">hoje</small>`:'<span class="muted">—</span>'}</td>${temWise()?`<td class="num">${r.k===curYM&&wE!=null?eur0(wE):'<span class="muted">—</span>'}</td>`:''}</tr>`).join('')}
+    ${proxF.map(r=>`<tr class="proj"><td>${mShort(r.k)} <small class="muted">previsto</small></td><td class="num">${brl0(r.ent)}${r.cv?`<div class="small muted">inclui ${brl0(r.cv)} convertidos</div>`:''}</td><td class="num">− ${brl0(r.sai)}</td><td class="num">− ${brl0(r.ret)}</td><td class="num">${r.fim==null?'—':`<b class="${r.fim<0?'neg':''}">${brl0(r.fim)}</b>`}</td>${temWise()?`<td class="num">${r.w==null?'—':eur0(r.w)}</td>`:''}</tr>`).join('')}
+    </tbody></table></div><p class="hint">Meses passados mostram o que entrou e saiu. O saldo começa a contar a partir do ponto de partida que você informou. A previsão usa as contas fixas e a retirada fixa${'${temWise()?", e supõe que você converte da Wise só o que falta em reais.":"."}'}</p></div>
   </div>
   <div class="grid g2" style="margin-top:14px">
+   ${temWise()?`<div class="card" style="grid-column:1/-1"><div class="card-h"><h2>Wise: o dinheiro em euro</h2><span class="meta">a Infinity paga aqui</span></div>
+    <div class="grid g3" style="align-items:start"><div><div class="small muted">Saldo</div><div style="font:800 26px var(--display)">${wE==null?'—':eur0(wE)}</div><div class="small muted">${wE==null?'informe em "Atualizar saldos"':'≈ '+brl0(wE*cot())}</div></div>
+    <div><div class="small muted">Quanto converter por mês</div><div style="font:800 26px var(--display)">${falta?'≈ '+eur0(falta/cot()):'nada'}</div><div class="small muted">${falta?`só o que falta em reais: ${brl0(falta)} (a Elohim paga ${brl0(fB.rec)}; saem ${brl0(fB.desp)} de custos + ${brl0(fixo)} da sua retirada)`:'os reais da empresa já cobrem tudo'}</div></div>
+    <div><div class="small muted">Últimas conversões</div>${conv.length?conv.slice(0,4).map(([k,x])=>`<div class="small">${mShort(k)}: ${eur0(eurOf(x))} → ${brl0(x.valor)} <span class="muted">(R$ ${numIn(x.valor/eurOf(x))} por €)</span></div>`).join(''):'<div class="small muted">Nenhuma ainda.</div>'}</div></div>
+    <div class="inline" style="margin-top:12px"><button class="btn pri" data-act="converter">Registrar conversão para real</button><span class="hint">O resto fica guardado em euro. Converta sempre no mesmo dia do mês, sem tentar adivinhar o melhor câmbio.</span></div></div>`:''}
    <div class="card"><div class="card-h"><h2>Quanto cada cliente deixa</h2><span class="meta">${mLabel(m)}</span></div>
     <div class="table-wrap"><table><thead><tr><th>Cliente</th><th class="num">Paga</th><th class="num">Freelas</th><th class="num">Fica com você</th></tr></thead><tbody>
     ${rowsC.map(o=>`<tr><td>${esc(o.k.nome)}</td><td class="num">${brl0(o.r)}</td><td class="num">− ${brl0(o.d)}</td><td class="num"><b>${brl0(o.mg)}</b> <span class="muted small">${o.r?pct(o.mg/o.r):''}</span></td></tr>`).join('')||'<tr><td colspan="4" class="empty">Cadastre clientes PJ em Ajustes.</td></tr>'}
@@ -816,7 +848,7 @@ function itemModal(orig,m,preset){let st=Object.assign({tipo:'despesa',ent:S.esc
   const body=()=>{const C=cfg(),e=st.tipo==='transf'?entDe(st.de):st.ent,t=st.tipo;
     const cats=t==='transf'?[]:(C.categorias[e][t]||[]);if(st.cat&&!cats.includes(st.cat))cats.unshift(st.cat);
     const contas=[...C.contas.filter(c=>c.ent===e),...(t==='despesa'?C.cartoes.filter(c=>c.ent===e):[])];
-    const lugares=[['PJ','Empresa (PJ)'],['PF','Pessoa física (PF)'],...C.metas.map(g=>['meta:'+g.id,g.nome])];
+    const lugares=[['PJ','Empresa (PJ)'],...(temWise()?[['wise','Wise (euro)']]:[]),['PF','Pessoa física (PF)'],...C.metas.map(g=>['meta:'+g.id,g.nome])];
     return `<div class="seg" style="justify-self:start">${[['despesa','Despesa'],['receita','Receita'],['transf','Transferência']].map(([v,l])=>`<button type="button" class="${t===v?'on':''}" data-act="mtipo" data-v="${v}">${l}</button>`).join('')}</div>
     ${t!=='transf'?`<div class="seg" style="justify-self:start">${['PF','PJ'].map(v=>`<button type="button" class="${st.ent===v?'on':''}" data-act="ment" data-v="${v}">${v==='PF'?'Pessoa física':'Empresa'}</button>`).join('')}</div>`:
       `<div class="two"><div class="fld"><label for="m-de">Sai de</label><select id="m-de" name="de" data-re="1">${lugares.map(([v,l])=>opt(v,l,st.de)).join('')}</select></div><div class="fld"><label for="m-para">Vai para</label><select id="m-para" name="para" data-re="1">${lugares.map(([v,l])=>opt(v,l,st.para)).join('')}</select></div></div>`}
@@ -825,7 +857,8 @@ function itemModal(orig,m,preset){let st=Object.assign({tipo:'despesa',ent:S.esc
      <div class="fld"><label for="m-mes">Mês</label><input id="m-mes" name="mes" type="month" value="${esc(st.mes)}" required></div>
      <div class="fld"><label for="m-dia">Dia</label><input id="m-dia" name="dia" type="number" min="1" max="31" value="${esc(st.dia)}" required></div></div>
     ${t!=='transf'?`<div class="two"><div class="fld"><label for="m-cat">Categoria</label><select id="m-cat" name="cat">${cats.map(c=>opt(c,c,st.cat)).join('')}</select></div>
-     <div class="fld"><label for="m-conta">${t==='receita'?'Entra em':'Pago com'}</label><select id="m-conta" name="conta">${contas.map(c=>opt(c.id,c.nome,st.conta)).join('')}</select></div></div>
+     <div class="fld"><label for="m-conta">${t==='receita'?'Entra em':'Pago com'}</label><select id="m-conta" name="conta" data-re="1">${contas.map(c=>opt(c.id,c.nome,st.conta)).join('')}</select></div></div>
+     ${(st.conta===WISE||(!st.conta&&contas[0]&&contas[0].id===WISE))?`<div class="fld"><label for="m-eur">Valor em euro (opcional)</label><input id="m-eur" name="eur" value="${st.eur!=null?numIn(st.eur):''}" inputmode="decimal" placeholder="ex.: 445,00"><span class="hint">Se deixar vazio, uso a cotação de hoje (R$ ${numIn(cot())}).</span></div>`:''}
      <div class="two"><div class="fld"><label for="m-cli">Cliente / fonte</label><select id="m-cli" name="cliente"><option value="">—</option>${C.clientes.map(k=>opt(k.id,k.nome+(k.ent!==e?' ('+k.ent+')':''),st.cliente)).join('')}</select><span class="hint">${t==='despesa'?'Para freelas: vincule ao cliente do projeto.':'De quem veio o dinheiro.'}</span></div>
      <div class="fld"><label for="m-st">Situação</label><select id="m-st" name="status">${opt('pago',t==='receita'?'Recebido':'Pago',st.status)}${opt('pendente',t==='receita'?'A receber':'Pendente',st.status)}</select></div></div>
      <div class="two"><div class="fld"><label for="m-parc">Parcela (opcional)</label><input id="m-parc" name="parc" value="${esc(st.parc||'')}" placeholder="Ex.: 3/10"></div>
@@ -839,7 +872,7 @@ function itemModal(orig,m,preset){let st=Object.assign({tipo:'despesa',ent:S.esc
     onSubmit(o){const valor=parseBRL(o.valor);if(!o.desc||!o.desc.trim()){toast('Escreva uma descrição.');return false}if(!(valor>0)){toast('Informe um valor maior que zero.');return false}if(!/^\d{4}-\d{2}$/.test(o.mes)){toast('Escolha o mês.');return false}
       const it={id:orig?orig.id:uid('l'),dia:Math.min(31,Math.max(1,Number(o.dia)||1)),desc:o.desc.trim(),valor,tipo:st.tipo};
       if(st.tipo==='transf'){if(o.de===o.para){toast('Origem e destino precisam ser diferentes.');return false}it.de=o.de;it.para=o.para;it.ent=entDe(o.de);it.status='pago'}
-      else{it.ent=st.ent;it.cat=o.cat||'Outros';it.conta=o.conta||(st.ent==='PJ'?'pj':'pf');it.status=o.status||'pago';if(o.cliente)it.cliente=o.cliente;if(o.parc)it.parc=o.parc.trim();if(o.nota)it.nota=o.nota.trim()}
+      else{it.ent=st.ent;it.cat=o.cat||'Outros';it.conta=o.conta||(st.ent==='PJ'?'pj':'pf');it.status=o.status||'pago';if(o.cliente)it.cliente=o.cliente;if(o.parc)it.parc=o.parc.trim();if(it.conta===WISE&&parseBRL(o.eur)>0)it.eur=parseBRL(o.eur);if(o.nota)it.nota=o.nota.trim()}
       if(orig&&orig.recId)it.recId=orig.recId;
       if(it.status==='pago'||it.tipo==='transf'){it.pagoEm=(orig&&orig.pagoEm&&(orig.status==='pago'||orig.tipo==='transf'))?orig.pagoEm:Date.now()}
       upsertItem(o.mes,it,orig?m:null);
@@ -888,7 +921,8 @@ function toCSV(list){const h=['mes','dia','descricao','valor','tipo','escopo','c
 /* ---------- balões de ajuda ---------- */
 const TIPS=[
  ['Vai sobrar em','Tudo o que entra no mês (você + empresa) menos tudo o que sai. É o que deve sobrar se nada mudar.'],
- ['Caixa da empresa hoje','Quanto a empresa tem agora, contando a partir do saldo que você informou.'],
+ ['Caixa da empresa hoje','Reais que a empresa tem agora, contando a partir do saldo que você informou. O euro da Wise aparece separado.'],
+ ['Wise (euro)','Euros da empresa guardados na Wise. O valor em reais muda com a cotação do dia.'],
  ['Caixa da empresa','Dinheiro que é da empresa, separado do seu. A meta é ter 3 meses de custos guardados.'],
  ['Reserva pessoal','Seu dinheiro guardado para emergência. "Cobre X meses" é quanto tempo você vive só dela.'],
  ['Falta pagar','Contas deste mês que você ainda não marcou como pagas.'],
@@ -989,6 +1023,9 @@ document.addEventListener('click',e=>{const t=e.target.closest('[data-act]');if(
    case 'qent':S.qEnt=t.dataset.v;S._keepScroll=true;render();break;
    case 'qtipo':S.qTipo=t.dataset.v;S._keepScroll=true;render();break;
    case 'importar-planilha':importarPlanilha();break;
+   case 'mig-wise':migrarWise();break;
+   case 'converter':{const fB=fixosPJ(false),falta=Math.max(0,fB.desp+retiradaFixa()-fB.rec);openModal({title:'Converter euro em real',ok:'Registrar conversão',body:()=>`<p class="hint" style="margin:0">Lance o que saiu da Wise e o que chegou em reais na conta da empresa. A diferença mostra quanto o câmbio custou.</p><div class="two"><div class="fld"><label for="c-eur">Saiu da Wise (€)</label><input id="c-eur" name="eur" inputmode="decimal" value="${falta?numIn(Math.ceil(falta/cot())):''}"></div><div class="fld"><label for="c-brl">Chegou em reais (R$)</label><input id="c-brl" name="brl" inputmode="decimal" placeholder="ex.: 1.950,00"></div></div><div class="fld"><label for="c-dia">Dia</label><input id="c-dia" name="dia" type="number" min="1" max="31" value="${today.getDate()}"></div>`,
+     onSubmit(o){const e=parseBRL(o.eur),b=parseBRL(o.brl);if(!(e>0&&b>0)){toast('Preencha os dois valores.');return false}const it={id:uid('l'),dia:Math.min(31,Math.max(1,Number(o.dia)||1)),desc:'Conversão Wise → real',valor:b,eur:e,tipo:'transf',de:'wise',para:'PJ',ent:'PJ',status:'pago',pagoEm:Date.now(),nota:'R$ '+numIn(b/e)+' por euro'};upsertItem(S.month,it);toast(`${eur0(e)} viraram ${brl(b)} (R$ ${numIn(b/e)} por euro).`);return true}});break}
    case 'allins':S.allIns=!S.allIns;S._keepScroll=true;render();break;
    case 'meta-ajusta':{const g=reservaMeta();if(g){g.aporte=Number(t.dataset.v);saveCfg();S._keepScroll=true;render();toast('Meta de reserva ajustada para '+brl0(g.aporte)+' por mês.')}break}
    case 'partida-edit':S.editPartida=!S.editPartida;S._keepScroll=true;render();break;
@@ -1014,7 +1051,7 @@ document.addEventListener('submit',e=>{const f=e.target;e.preventDefault();
     upsertItem(S.month,it);toast(`${it.desc}: ${brl(val)} em ${it.cat} (${it.ent}). Toque no ⋯ para mudar.`);setTimeout(()=>{const q=$('#qtxt');if(q)q.focus()},20);return}
   if(f.dataset.form==='partida'){const o=fdObj(f),C=S.cfg;const pf=parseBRL(o.pf),res=parseBRL(o.res),pj=parseBRL(o.pj),col=parseBRL(o.colchao);const ts=Date.now();
     let vPF=pf,vPJ=pj;if(o.opt==='colchao'){if(col>pf){toast('Sua conta do dia a dia tem menos que o colchão. Escolha começar a empresa do zero ou diminua o colchão.');return}vPF=pf-col;vPJ=pj+col}
-    C.saldos={ts,data:new Date().toISOString().slice(0,10),PF:{valor:vPF},PJ:{valor:vPJ}};
+    C.saldos={ts,data:new Date().toISOString().slice(0,10),PF:{valor:vPF},PJ:{valor:vPJ}};if(o.wise!=null&&o.wise!=='')C.saldos.wise={eur:parseBRL(o.wise)};
     const g=C.metas.find(x=>x.ent==='PF');if(g){g.saldoIni=res;g.saldoTs=ts;g.nota='Saldo informado em '+C.saldos.data+'.'}
     C.metas=C.metas.filter(x=>x.id!=='caixa-pj');C.proLabore=C.proLabore||{};if(!C.proLabore.fixo)C.proLabore.fixo=2000;C.caixaPJ=C.caixaPJ||{meses:3};
     S.editPartida=false;saveCfg();render();toast('Ponto de partida salvo. Empresa começa com '+brl0(vPJ)+'.');return}
@@ -1055,6 +1092,7 @@ document.addEventListener('click',async e=>{const t=e.target.closest('[data-act=
 /* ---------- conexão ---------- */
 route();
 function maybeImport(){if(S.impData&&S.cfg&&!S.cfg.importado&&!S.imp&&S.db&&!S._impTried){S._impTried=true;setTimeout(importarPlanilha,400)}}
+try{fetch('https://economia.awesomeapi.com.br/json/last/EUR-BRL').then(r=>r.ok?r.json():null).then(j=>{const v=j&&j.EURBRL&&Number(j.EURBRL.bid);if(v>3&&v<15){S.cotLive=v;if(S.ready)render()}}).catch(()=>{})}catch(_){}
 (async()=>{let db=null;
   if(!sb){S.err='nodb';render();return}
   const {data:sess}=await sb.auth.getSession();
