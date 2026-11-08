@@ -199,6 +199,13 @@ td.muted{color:var(--ink-3)}
 .hlp{display:inline-grid;place-items:center;width:15px;height:15px;border-radius:50%;border:1px solid var(--line-2);color:var(--ink-3);font:700 10px/1 var(--body);margin-left:5px;cursor:help;vertical-align:1px;flex:none}
 .hlp:hover,.hlp:focus-visible{border-color:var(--accent);color:var(--accent-text)}
 th .hlp{margin-left:3px}
+/* previsão */
+.pv{display:grid;grid-template-columns:minmax(0,1fr) 120px 28px;gap:8px;align-items:center;padding:7px 12px 7px 16px;border-top:1px solid var(--line)}
+.pv .t div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pv .t small{font-size:12px;color:var(--ink-3)}
+.pvin{width:100%;padding:6px 8px;border:1px solid var(--line-2);border-radius:7px;text-align:right;background:var(--surface);font-weight:600}
+.pvin:focus{border-color:var(--accent);outline:none}
+.prevcard{display:flex;justify-content:space-between;align-items:center;gap:12px;text-decoration:none;color:inherit;flex-wrap:wrap}
+.prevcard:hover{border-color:var(--accent)}
 /* início */
 .rules{margin:0;padding-left:20px;display:grid;gap:6px;font-size:14px;color:var(--ink-2)}
 .rules b{color:var(--ink)}
@@ -323,6 +330,7 @@ const S={editVal:null,imp:null,impData:null,db:null,cfg:null,hist:{},meses:{},mo
 const VIEWS=[
  ['inicio','Início','M3 11l9-8 9 8M5 9v11h5v-6h4v6h5V9'],
  ['mes','Contas do mês','M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9'],
+ ['previsao','Próximo mês','M3 17l6-6 4 4 8-8M14 7h7v7'],
  ['empresa','Empresa · caixa','M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6'],
  ['metas','Reserva e metas','M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zm0-5a4 4 0 1 0 0-8 4 4 0 0 0 0 8z'],
  ['historico','Histórico','M3 3v18h18M7 15l4-4 3 3 5-6'],
@@ -406,6 +414,14 @@ function retiradaFixa(){return Number((cfg().proLabore||{}).fixo)||0}
 function retiradaDoMes(m){const p=cfg().proLabore||{};if(p.porMes&&p.porMes[m]!=null)return Number(p.porMes[m])||0;if(p.inicio&&m<p.inicio)return 0;return Number(p.fixo)||0}
 function custoVidaPF(m){const pv=prevComItens(m,6);const v=pv.length?sum(pv.map(k=>calc(k,'PF').desp))/pv.length:0;return v||calc(m,'PF').desp}
 function reservaMeta(){return cfg().metas.find(x=>x.ent==='PF')}
+function notaDe(k){if(!k)return {teto:false,modo:'nenhuma',valor:0};const d={geniodesk:{teto:true,modo:'valor'},elohim:{teto:true,modo:'fixo',valor:1900},infinity:{teto:true,modo:'nenhuma'}}[k.id]||{teto:k.ent==='PJ',modo:'valor'};
+  return {teto:k.teto!=null?k.teto:d.teto,modo:k.notaModo||d.modo,valor:k.notaValor!=null?Number(k.notaValor):(d.valor||0)}}
+function tetoAno(y){let entra=0,notas=0;const meses=[];for(let i=1;i<=12;i++){const m=y+'-'+String(i).padStart(2,'0');let e=0,n=0;
+    for(const x of itens(m)){if(x.tipo!=='receita')continue;const k=x.cliente&&cliente(x.cliente);
+      if(k){const nd=notaDe(k);if(!nd.teto)continue;e+=Number(x.valor)||0;n+=nd.modo==='valor'?(Number(x.valor)||0):nd.modo==='fixo'?nd.valor:0}
+      else if(x.ent==='PJ'){e+=Number(x.valor)||0}}
+    entra+=e;notas+=n;meses.push({m,e,n,accE:entra,accN:notas})}
+  return {entra,notas,meses}}
 function pjAno(y){let s=Number((cfg().pjAnterior||{})[y])||0;for(const m in S.meses){if(m.startsWith(y+'-'))s+=calc(m,'PJ').rec}return s}
 function mediaGastosPF(m){const vals=[];for(let i=0;i<3;i++){const k=addM(m,-i);if(itens(k).length)vals.push(calc(k,'PF').desp)}return vals.length?sum(vals)/vals.length:0}
 function catTotals(m,esc){const t={};for(const x of itens(m)){if(x.tipo!=='despesa')continue;if(esc!=='tudo'&&x.ent!==esc)continue;const k=(esc==='tudo'?x.ent+' · ':'')+(x.cat||'Outros');t[k]=(t[k]||0)+(Number(x.valor)||0)}return Object.entries(t).sort((a,b)=>b[1]-a[1])}
@@ -434,7 +450,8 @@ function deleteItem(m,id){const d=monthDoc(m);d.itens=d.itens.filter(x=>x.id!==i
 function recParc(r,m){if(!r.parcTotal)return null;const n=diffM(r.parcIni,m)+1;if(n<1||n>r.parcTotal)return false;return n+'/'+r.parcTotal}
 function pendentesFixas(m){const d=itens(m);return cfg().recorrentes.filter(r=>r.ativo!==false&&recParc(r,m)!==false&&!d.some(x=>x.recId===r.id))}
 function gerarFixas(m){const list=pendentesFixas(m);if(!list.length){toast('As contas fixas deste mês já estão lançadas.');return}
-  const d=monthDoc(m);for(const r of list){const p=recParc(r,m);const it={id:uid('l'),dia:r.dia||1,desc:r.desc,valor:r.valor,tipo:r.tipo,ent:r.ent,cat:r.cat,conta:r.conta,status:'pendente',recId:r.id};if(r.cliente)it.cliente=r.cliente;if(p)it.parc=p;d.itens.push(it)}
+  const PV=((cfg().prev||{})[m])||{};const d=monthDoc(m);for(const r of list){const p=recParc(r,m);const pv=(PV.v||{})['r:'+r.id];if(pv===0)continue;const it={id:uid('l'),dia:r.dia||1,desc:r.desc,valor:pv!=null?pv:r.valor,tipo:r.tipo,ent:r.ent,cat:r.cat,conta:r.conta,status:'pendente',recId:r.id};if(r.cliente)it.cliente=r.cliente;if(p)it.parc=p;d.itens.push(it)}
+  for(const e of (PV.extras||[])){if(!(e.valor>0))continue;d.itens.push({id:uid('l'),dia:e.dia||1,desc:e.desc,valor:e.valor,tipo:e.tipo||'despesa',ent:e.ent||'PF',cat:e.cat||'Outros',conta:(e.ent||'PF')==='PJ'?'pj':'pf',status:'pendente',prevId:e.id})}
   d.rotina=d.rotina||{};d.rotina.contasFixas=true;saveMonth(m);toast(list.length+' contas fixas lançadas como pendentes em '+mLabel(m)+'.');render()}
 
 /* ---------- toast e tooltip ---------- */
@@ -606,12 +623,42 @@ function insights(m){const out=[],C=cfg(),it=itens(m),prev=prevComItens(m,6),cur
   // retirada
   const cp=calc(m,'PJ'),rdm=retiradaDoMes(m);if(rdm&&cp.retir<rdm&&cp.rec>0&&(!cur||today.getDate()>=10))add('info',`Faça sua retirada de ${brl0(rdm-cp.retir)} da empresa`,rdm!==retiradaFixa()?`Valor especial deste mês. A partir de ${mLabel((cfg().proLabore||{}).inicio||addM(m,1))} vale a retirada fixa de ${brl0(retiradaFixa())}.`:`É o seu "salário" da empresa. Sai da PJ para a PF uma vez por mês, sempre o mesmo valor.`,'',`<button class="btn sm" data-act="retirada">Registrar</button>`);
   // MEI
-  if(C.regime==='MEI'){const y=m.slice(0,4),fat=pjAno(y),lim=Number(C.limitePJ)||81000,proj=fat+cp.rec*(12-Number(m.slice(5)));if(fat>lim*1.2)add('crit',`Faturamento PJ passou do teto do MEI`,`${brl0(fat)} em ${y}, teto de ${brl0(lim)}. Fale com um contador.`);else if(proj>lim*.85)add(proj>lim?'warn':'info',`Teto do MEI: ${pct(fat/lim)} usado em ${y}`,`Já faturou ${brl0(fat)}; no ritmo atual fecha o ano com ${brl0(proj)} (teto ${brl0(lim)}).`,'',`<a class="btn sm" href="#empresa">Ver</a>`)}
+  if(C.regime==='MEI'){const y=m.slice(0,4),T=tetoAno(y),lim=Number(C.limitePJ)||81000,tol=lim*(1+(Number(C.tolerancia)||20)/100),fat=T.entra,proj=fat+cp.rec*(12-Number(m.slice(5)));
+    const cruzN=T.meses.find(z=>z.accN>tol),cruzE=T.meses.find(z=>z.accE>tol);
+    if(cruzN||cruzE){const z=cruzN||cruzE,prazo=addM(z.m,1);add('crit',`Teto do MEI estourado em ${y}`,`${cruzN?`Só pelas notas emitidas, passou de ${brl0(tol)} em ${mLabel(z.m).toLowerCase()} (${brl0(T.notas)} até agora).`:''} Contando tudo o que entra pelo seu trabalho: ${brl0(T.entra)}. Acima de 20% do teto, o desenquadramento volta a janeiro. O prazo para comunicar é o último dia útil de ${mLabel(prazo).toLowerCase()}.`,'Leve estes números a um contador esta semana',`<a class="btn sm" href="#empresa">Ver</a>`)}
+    else if(fat>lim*1.2)add('crit',`Faturamento passou do teto do MEI`,`${brl0(fat)} em ${y}, teto de ${brl0(lim)}. Fale com um contador.`);else if(proj>lim*.85)add(proj>lim?'warn':'info',`Teto do MEI: ${pct(fat/lim)} usado em ${y}`,`Já faturou ${brl0(fat)}; no ritmo atual fecha o ano com ${brl0(proj)} (teto ${brl0(lim)}).`,'',`<a class="btn sm" href="#empresa">Ver</a>`)}
   // boa notícia
   if(dn.length){const [c2,v,a]=dn.sort((a,b)=>(b[2]-b[1])-(a[2]-a[1]))[0];add('good',`${esc(c2)} abaixo da média`,`${brl0(v)} este mês contra ${brl0(a)} de costume.`,`${brl0(a-v)} a mais no bolso`)}
   const ord={crit:0,warn:1,info:2,good:3};return out.sort((a,b)=>ord[a.sev]-ord[b.sev])}
 function insightList(list,limit){const sh=S.allIns?list:list.slice(0,limit);
   return `<div class="ins">${sh.map(x=>`<div class="in in-${x.sev}"><div class="in-b"><div class="in-t">${x.title}</div>${x.text?`<div class="in-x">${x.text}</div>`:''}${x.impact?`<div class="in-i">${x.impact}</div>`:''}</div>${x.action?`<div class="in-a">${x.action}</div>`:''}</div>`).join('')}</div>${list.length>limit?`<button class="btn sm ghost" data-act="allins" style="margin-top:8px">${S.allIns?'Mostrar menos':'Ver mais '+(list.length-limit)}</button>`:''}`}
+
+/* ---------- PRÓXIMO MÊS ---------- */
+function prevLinhas(ym){const C=cfg(),last=addM(ym,-1),li=itens(last),PV=((C.prev||{})[ym])||{},V=PV.v||{},out=[];
+  for(const r of C.recorrentes){if(r.ativo===false||recParc(r,ym)===false)continue;const lx=li.find(x=>x.recId===r.id);const base=Number(r.valor);
+    out.push({key:'r:'+r.id,desc:r.desc+(r.parcTotal?' '+recParc(r,ym):''),tipo:r.tipo,ent:r.ent,cat:r.cat,conta:r.conta,cliente:r.cliente,ultimo:lx?Number(lx.valor):null,base,valor:V['r:'+r.id]!=null?V['r:'+r.id]:base,editado:V['r:'+r.id]!=null})}
+  const avulsos=sum(li.filter(x=>x.tipo==='despesa'&&!x.recId&&x.ent==='PF'),x=>x.valor);
+  out.push({key:'avulsos',desc:'Gastos avulsos (fora das contas fixas)',tipo:'despesa',ent:'PF',cat:'Outros',ultimo:avulsos,base:avulsos,valor:V.avulsos!=null?V.avulsos:avulsos,editado:V.avulsos!=null,nota:'o que você gastou fora da lista no mês passado'});
+  for(const e of (PV.extras||[]))out.push({key:'x:'+e.id,extra:e.id,desc:e.desc,tipo:e.tipo||'despesa',ent:e.ent||'PF',cat:e.cat||'Outros',ultimo:null,base:0,valor:Number(e.valor)||0,editado:true});
+  return out}
+function prevCalc(ym){const L=prevLinhas(ym),fx=retiradaDoMes(ym);const s=(f)=>sum(L.filter(f),x=>x.valor);
+  const rec=s(x=>x.tipo==='receita'),desp=s(x=>x.tipo==='despesa');
+  const recPJ=s(x=>x.tipo==='receita'&&x.ent==='PJ'),despPJ=s(x=>x.tipo==='despesa'&&x.ent==='PJ'),recPF=s(x=>x.tipo==='receita'&&x.ent==='PF'),despPF=s(x=>x.tipo==='despesa'&&x.ent==='PF');
+  return {L,rec,desp,sobra:rec-desp,recPJ,despPJ,recPF,despPF,fx}}
+function vPrev(){const ym=addM(curYM,1),P=prevCalc(ym),last=addM(ym,-1),lc=calc(last,'tudo'),lastSobra=lc.rec-lc.desp,C=cfg();
+  const grupos=[['Entradas',x=>x.tipo==='receita'],['Empresa',x=>x.tipo==='despesa'&&x.ent==='PJ'],['Casa',x=>x.tipo==='despesa'&&x.ent==='PF'&&['Moradia','Contas da casa','Mercado'].includes(x.cat)],['Cartões',x=>x.tipo==='despesa'&&x.ent==='PF'&&(x.cat==='Cartão (a detalhar)'||isCard(x.conta))],['Família',x=>x.tipo==='despesa'&&x.ent==='PF'&&x.cat==='Família'],['Pessoal e avulsos',x=>x.tipo==='despesa'&&x.ent==='PF'&&!['Moradia','Contas da casa','Mercado','Família','Cartão (a detalhar)'].includes(x.cat)&&!isCard(x.conta)]];
+  const row=x=>`<div class="pv"><div class="t"><div>${esc(x.desc)}${x.editado?' <span class="badge b-PJ" style="background:var(--accent-soft);color:var(--accent-text)">ajustado</span>':''}</div><small>${x.ultimo!=null?'mês passado: '+brl0(x.ultimo):x.extra?'previsão extra':'novo'}${x.nota?' · '+esc(x.nota):''}</small></div>
+    <input class="pvin" data-pv="${esc(x.key)}" value="${numIn(x.valor)}" inputmode="decimal" aria-label="Valor previsto: ${esc(x.desc)}">${x.extra?`<button class="more" data-act="pv-del" data-id="${esc(x.extra)}" aria-label="Remover">×</button>`:x.editado?`<button class="more" data-act="pv-reset" data-k="${esc(x.key)}" title="Voltar ao valor original" aria-label="Desfazer ajuste">↺</button>`:'<span></span>'}</div>`;
+  const ad=diffM(curYM,ym);
+  return header('Próximo mês: '+mLabel(ym).toLowerCase(),'Parte das suas contas fixas e do que você gastou no mês passado. Mude o que você já sabe que vai ser diferente.','')+
+  `<div class="strip"><div class="card"><div class="of">Vai entrar</div><div class="big">${brl(P.rec)}</div><div class="of">salário e clientes</div></div>
+   <div class="card"><div class="of">Vai sair</div><div class="big">${brl(P.desp)}</div><div class="of">pessoal ${brl0(P.despPF)} · empresa ${brl0(P.despPJ)}</div></div>
+   <div class="card"><div class="of">Vai sobrar</div><div class="big ${P.sobra>=0?'pos':'neg'}">${brl(P.sobra)}</div><div class="of">${Math.round(P.sobra-lastSobra)>=0?'+':'−'}${brl0(Math.abs(Math.round(P.sobra-lastSobra)))} comparado com ${mLabel(last).toLowerCase()}</div></div></div>
+  <div class="cols">${[0,1,2].map(col=>'').join('')}<div class="stack">${grupos.slice(0,3).map(([g,f])=>{const ls=P.L.filter(f);return ls.length?`<div class="card sec" style="padding:0"><div class="sec-h"><h2>${g}</h2><span class="meta">${brl0(sum(ls,x=>x.valor))}</span></div>${ls.map(row).join('')}</div>`:''}).join('')}</div>
+   <div class="stack">${grupos.slice(3).map(([g,f])=>{const ls=P.L.filter(f);return ls.length?`<div class="card sec" style="padding:0"><div class="sec-h"><h2>${g}</h2><span class="meta">${brl0(sum(ls,x=>x.valor))}</span></div>${ls.map(row).join('')}</div>`:''}).join('')}
+    <div class="card"><h2 style="margin-bottom:10px">Algo novo previsto?</h2><form class="inline" data-form="pv-add"><input name="desc" placeholder="Ex.: presente de Natal" required aria-label="Descrição"><input name="valor" placeholder="Valor" inputmode="decimal" required aria-label="Valor" style="width:110px"><select name="ent" aria-label="De quem"><option value="PF">PF</option><option value="PJ">PJ</option></select><select name="tipo" aria-label="Tipo"><option value="despesa">Gasto</option><option value="receita">Entrada</option></select><button class="btn sm pri">Adicionar</button></form>
+    <p class="hint" style="margin:10px 0 0">Quando ${mLabel(ym).toLowerCase()} chegar e você lançar as contas fixas, os valores ajustados aqui já entram no lugar dos de sempre.</p>
+    ${(C.prev||{})[ym]?'<button class="btn sm ghost" data-act="pv-clear" style="margin-top:6px">Desfazer todos os ajustes</button>':''}</div></div></div>`}
 
 /* ---------- INÍCIO ---------- */
 function tile(lab,val,sub,cls,extra){return `<div class="card tile ${cls||''}"><div class="lab">${lab}</div><div class="val">${val}</div>${sub?`<div class="sub">${sub}</div>`:''}${extra||''}</div>`}
@@ -627,6 +674,7 @@ function vInicio(){const m=S.month,C=cfg(),c=calc(m,'tudo'),cp=calc(m,'PJ'),cf=c
    ${tile('Reserva pessoal',brl0(res),mg?`cobre ${(res/mg).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} meses do seu custo de vida (${brl0(mg)}/mês)`:'',mg&&res/mg<3?'t-warn':'')}
    ${tile('Falta pagar',brl0(sum(pend,x=>x.valor)),pend.length?`${pend.length} ${pend.length>1?'contas':'conta'}${atr.length?` · <b class="neg">${atr.length} atrasada${atr.length>1?'s':''}</b>`:''}`:'tudo pago',atr.length?'t-crit':'',`<a class="tlink" href="#mes">Marcar contas →</a>`)}
   </div>
+  ${(()=>{const ym=addM(curYM,1),P=prevCalc(ym);return `<a class="card prevcard" href="#previsao" style="margin-top:14px"><div><div class="small muted">Próximo mês · ${mLabel(ym).toLowerCase()}</div><div><b>Vai sobrar ${brl0(P.sobra)}</b> <span class="small muted">entra ${brl0(P.rec)} · sai ${brl0(P.desp)}</span></div></div><span class="btn sm">Ajustar previsão →</span></a>`})()}
   <div class="card" style="margin-top:14px"><div class="card-h"><h2>Pontos de atenção</h2><span class="meta">${ins.filter(x=>x.sev==='crit').length?`<b class="neg">${ins.filter(x=>x.sev==='crit').length} urgente${ins.filter(x=>x.sev==='crit').length>1?'s':''}</b> · `:''}${ins.length} no total</span></div>${ins.length?insightList(ins,5):'<div class="empty">Nada pedindo atenção agora.</div>'}</div>
   <div class="grid g2" style="margin-top:14px">
    <div class="card flow"><div class="card-h"><h2>${badge('PJ')} Empresa em ${MES3[Number(m.slice(5))-1]}</h2><a class="meta" href="#empresa">caixa da empresa →</a></div>
@@ -714,7 +762,7 @@ function vFixas(){const R=cfg().recorrentes;
 
 /* ---------- EMPRESA ---------- */
 function vEmpresa(){const m=S.month,y=m.slice(0,4),C=cfg(),c=calc(m,'PJ'),lucro=c.rec-c.desp;
-  const fat=pjAno(y),lim=Number(C.limitePJ)||81000,tol=lim*(1+(Number(C.tolerancia)||0)/100),scale=Math.max(tol*1.15,fat*1.05);
+  const TT=tetoAno(y),fat=TT.entra,lim=Number(C.limitePJ)||81000,tol=lim*(1+(Number(C.tolerancia)||0)/100),scale=Math.max(tol*1.15,fat*1.05);
   const proj=fat+c.rec*(12-Number(m.slice(5)));const color=fat>tol?'var(--crit)':fat>lim*.75?'var(--warn)':'var(--good)';
   const sPJ=saldoConta('PJ'),cf=custoFixoPJ(),rf=receitaFixaPJ(),alvo=alvoCaixaPJ(),fixo=retiradaFixa();
   // fluxo de caixa: 3 meses antes, mês atual, 3 projetados
@@ -758,7 +806,7 @@ function vEmpresa(){const m=S.month,y=m.slice(0,4),C=cfg(),c=calc(m,'PJ'),lucro=
     <tr><td class="muted">Custos gerais (ferramentas, impostos, Thiago)</td><td></td><td class="num">− ${brl0(semCli)}</td><td></td></tr></tbody></table></div></div>
    <div class="card"><div class="card-h"><h2>Teto do MEI em ${y}</h2><span class="meta">${brl0(fat)} de ${brl0(lim)}</span></div>
     ${C.regime==='MEI'?`<div class="mei-track" role="img" aria-label="${brl0(fat)} de ${brl0(lim)}"><i style="width:${Math.min(100,fat/scale*100).toFixed(1)}%;background:${color}"></i><span class="mk" style="left:${(lim/scale*100).toFixed(1)}%"><span>teto ${kfmt(lim)}</span></span><span class="mk" style="left:${(tol/scale*100).toFixed(1)}%"><em>+${C.tolerancia}% ${kfmt(tol)}</em></span></div>
-    <p class="small" style="margin:0">Projeção até dezembro: <b class="${proj>lim?'neg':''}">${brl0(proj)}</b>. Só conta o que entra como receita da empresa; o salário da GenioDesk (PF) fica de fora. Confirme sempre com um contador.</p>`:'<p class="muted">Seu regime não é MEI.</p>'}
+    <dl style="display:grid;grid-template-columns:1fr auto;gap:6px 12px;margin:0;font-size:14px"><dt>Pelas notas emitidas</dt><dd style="margin:0;text-align:right;font-weight:700" class="${TT.notas>tol?'neg':''}">${brl0(TT.notas)} <small class="muted">${pct(TT.notas/lim)} do teto</small></dd><dt>Tudo o que entra pelo seu trabalho</dt><dd style="margin:0;text-align:right;font-weight:700" class="${TT.entra>tol?'neg':''}">${brl0(TT.entra)} <small class="muted">${pct(TT.entra/lim)}</small></dd></dl><p class="small" style="margin:8px 0 0">O teto conta a receita bruta da atividade, com ou sem nota e em qualquer conta. A barra mostra tudo o que entra. Confirme com um contador.</p>`:'<p class="muted">Seu regime não é MEI.</p>'}
     ${pjBars(bars,lim/12)}</div>
   </div>`}
 function pjBars(b,ref){const W=560,H=200,pl=52,pt=10,pb=24,iw=W-pl-8,ih=H-pt-pb;const mx=niceMax(Math.max(ref*1.2,...b.map(x=>x.v||0)));const gw=iw/12,bw=Math.min(26,gw-8);
@@ -921,6 +969,9 @@ function toCSV(list){const h=['mes','dia','descricao','valor','tipo','escopo','c
 /* ---------- balões de ajuda ---------- */
 const TIPS=[
  ['Vai sobrar em','Tudo o que entra no mês (você + empresa) menos tudo o que sai. É o que deve sobrar se nada mudar.'],
+ ['Vai entrar','Tudo o que deve entrar no próximo mês: salário e clientes.'],
+ ['Vai sair','Contas fixas, cartões e gastos avulsos previstos para o próximo mês.'],
+ ['Vai sobrar','Vai entrar menos vai sair. Mude os valores abaixo para ver como fica.'],
  ['Caixa da empresa hoje','Reais que a empresa tem agora, contando a partir do saldo que você informou. O euro da Wise aparece separado.'],
  ['Wise (euro)','Euros da empresa guardados na Wise. O valor em reais muda com a cotação do dia.'],
  ['Caixa da empresa','Dinheiro que é da empresa, separado do seu. A meta é ter 3 meses de custos guardados.'],
@@ -983,7 +1034,7 @@ function render(){renderNav();setSave();const el=$('#main');
   if(S.err){el.innerHTML=`<div class="state"><h2>Não foi possível abrir seus dados</h2><p>${S.err==='nodb'?'Não foi possível carregar o sistema. Confira a internet e recarregue a página.':'O banco de dados respondeu com um erro ('+esc(S.err)+'). Recarregue a página em alguns instantes.'}</p></div>`;return}
   if(!S.ready){el.innerHTML=`<div class="state"><h2>${S.slow?'Ainda tentando conectar…':'Carregando suas finanças…'}</h2>${S.slow?'<p>Seus dados ainda não chegaram. Confira a internet; a página continua tentando sozinha.</p>':''}</div>`;return}
   if(!S.cfg){el.innerHTML=`<div class="state"><h2>Nenhum dado por aqui</h2><p>Seu banco ainda está vazio. Traga os dados que já estão no sistema do Claude (leva 1 minuto) ou comece do zero.</p><div class="inline" style="justify-content:center"><button class="btn pri" data-act="importar">Trazer meus dados do Claude</button><button class="btn" data-act="init">Começar do zero</button></div><p class="hint">No sistema do Claude: Ajustes → Copiar backup completo. Depois cole aqui.</p></div>`;return}
-  const v={inicio:vInicio,mes:vMes,painel:vPainel,lancamentos:vLanc,fixas:vFixas,empresa:vEmpresa,cartoes:vCartoes,metas:vMetas,historico:vHist,ajustes:vAjustes}[S.view]||vPainel;
+  const v={inicio:vInicio,mes:vMes,previsao:vPrev,painel:vPainel,lancamentos:vLanc,fixas:vFixas,empresa:vEmpresa,cartoes:vCartoes,metas:vMetas,historico:vHist,ajustes:vAjustes}[S.view]||vPainel;
   const sy=scrollY;el.innerHTML=v();addTips(el);if(S._keepScroll)scrollTo(0,sy);S._keepScroll=false;
   if(S.view==='lancamentos'){const q=$('#fq');if(q&&S._focusQ){q.focus();q.setSelectionRange(q.value.length,q.value.length);S._focusQ=false}}}
 function route(){const h=location.hash.replace('#','');S.view=VIEWS.some(v=>v[0]===h&&h!=='-')?h:'inicio';render();scrollTo(0,0)}
@@ -1024,6 +1075,9 @@ document.addEventListener('click',e=>{const t=e.target.closest('[data-act]');if(
    case 'qtipo':S.qTipo=t.dataset.v;S._keepScroll=true;render();break;
    case 'importar-planilha':importarPlanilha();break;
    case 'mig-wise':migrarWise();break;
+   case 'pv-reset':{const ym=addM(curYM,1),P=(S.cfg.prev||{})[ym];if(P&&P.v){delete P.v[t.dataset.k];saveCfg();S._keepScroll=true;render()}break}
+   case 'pv-del':{const ym=addM(curYM,1),P=(S.cfg.prev||{})[ym];if(P){P.extras=(P.extras||[]).filter(e=>e.id!==t.dataset.id);saveCfg();S._keepScroll=true;render()}break}
+   case 'pv-clear':{const ym=addM(curYM,1);if(S.cfg.prev){delete S.cfg.prev[ym];saveCfg();S._keepScroll=true;render();toast('Previsão voltou aos valores de sempre.')}break}
    case 'converter':{const fB=fixosPJ(false),falta=Math.max(0,fB.desp+retiradaFixa()-fB.rec);openModal({title:'Converter euro em real',ok:'Registrar conversão',body:()=>`<p class="hint" style="margin:0">Lance o que saiu da Wise e o que chegou em reais na conta da empresa. A diferença mostra quanto o câmbio custou.</p><div class="two"><div class="fld"><label for="c-eur">Saiu da Wise (€)</label><input id="c-eur" name="eur" inputmode="decimal" value="${falta?numIn(Math.ceil(falta/cot())):''}"></div><div class="fld"><label for="c-brl">Chegou em reais (R$)</label><input id="c-brl" name="brl" inputmode="decimal" placeholder="ex.: 1.950,00"></div></div><div class="fld"><label for="c-dia">Dia</label><input id="c-dia" name="dia" type="number" min="1" max="31" value="${today.getDate()}"></div>`,
      onSubmit(o){const e=parseBRL(o.eur),b=parseBRL(o.brl);if(!(e>0&&b>0)){toast('Preencha os dois valores.');return false}const it={id:uid('l'),dia:Math.min(31,Math.max(1,Number(o.dia)||1)),desc:'Conversão Wise → real',valor:b,eur:e,tipo:'transf',de:'wise',para:'PJ',ent:'PJ',status:'pago',pagoEm:Date.now(),nota:'R$ '+numIn(b/e)+' por euro'};upsertItem(S.month,it);toast(`${eur0(e)} viraram ${brl(b)} (R$ ${numIn(b/e)} por euro).`);return true}});break}
    case 'allins':S.allIns=!S.allIns;S._keepScroll=true;render();break;
@@ -1035,6 +1089,8 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.closest('#modal')){if(t.dataset.re&&MODAL&&MODAL.onChange)MODAL.onChange();return}
   if(t.dataset.ck){const d=monthDoc(S.month),it=d.itens.find(x=>x.id===t.dataset.ck);if(it){it.status=t.checked?'pago':'pendente';if(t.checked)it.pagoEm=Date.now();else delete it.pagoEm;saveMonth(S.month);S._keepScroll=true;render()}return}
   if(t.id==='vin'){commitVal(t);return}
+  if(t.dataset.pv){const ym=addM(curYM,1),C=S.cfg;C.prev=C.prev||{};const P=C.prev[ym]=C.prev[ym]||{v:{},extras:[]};P.v=P.v||{};const v=parseBRL(t.value);const k=t.dataset.pv;
+    if(k.startsWith('x:')){const e=(P.extras||[]).find(z=>'x:'+z.id===k);if(e)e.valor=v}else P.v[k]=v;saveCfg();S._keepScroll=true;render();return}
   if(t.dataset.rot){const d=monthDoc(S.month);d.rotina=d.rotina||{};d.rotina[t.dataset.rot]=t.checked;saveMonth(S.month);S._keepScroll=true;render();return}
   if(t.id==='fent'){S.f.ent=t.value;render()}if(t.id==='ftipo'){S.f.tipo=t.value;render()}if(t.id==='fstatus'){S.f.status=t.value;render()}});
 let qT;document.addEventListener('input',e=>{if(e.target.id==='fq'){clearTimeout(qT);const v=e.target.value;qT=setTimeout(()=>{S.f.q=v;S._focusQ=true;render()},180)}});
@@ -1055,6 +1111,7 @@ document.addEventListener('submit',e=>{const f=e.target;e.preventDefault();
     const g=C.metas.find(x=>x.ent==='PF');if(g){g.saldoIni=res;g.saldoTs=ts;g.nota='Saldo informado em '+C.saldos.data+'.'}
     C.metas=C.metas.filter(x=>x.id!=='caixa-pj');C.proLabore=C.proLabore||{};if(!C.proLabore.fixo)C.proLabore.fixo=2000;C.caixaPJ=C.caixaPJ||{meses:3};
     S.editPartida=false;saveCfg();render();toast('Ponto de partida salvo. Empresa começa com '+brl0(vPJ)+'.');return}
+  if(f.dataset.form==='pv-add'){const o=fdObj(f),ym=addM(curYM,1),C=S.cfg;const v=parseBRL(o.valor);if(!o.desc.trim()||!(v>0)){toast('Escreva o que é e o valor.');return}C.prev=C.prev||{};const P=C.prev[ym]=C.prev[ym]||{v:{},extras:[]};P.extras=P.extras||[];const g=guessCat(o.desc,o.ent,o.tipo);P.extras.push({id:uid('p'),desc:o.desc.trim(),valor:v,ent:o.ent,tipo:o.tipo,cat:g.cat});saveCfg();S._keepScroll=true;render();return}
   if(f.dataset.form==='pjcfg'){const o=fdObj(f),C=S.cfg;C.proLabore=C.proLabore||{};C.proLabore.fixo=parseBRL(o.fixo);C.caixaPJ={meses:Math.max(1,Number(o.meses)||3)};saveCfg();S._keepScroll=true;render();toast('Regras do caixa da empresa salvas.');return}
   const k=f.dataset.form,o=fdObj(f);if(!S.cfg)return;const C=S.cfg;S._keepScroll=true;
   if(k==='empresa'){C.regime=o.regime;C.limitePJ=parseBRL(o.limitePJ);C.tolerancia=Number(o.tolerancia)||0;C.pjAnterior=C.pjAnterior||{};C.pjAnterior[S.month.slice(0,4)]=parseBRL(o.anterior);C.proLabore=C.proLabore||{};C.proLabore.reservaPct=Number(o.reservaPct)||0;saveCfg();render();toast('Dados da empresa salvos.')}
