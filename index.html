@@ -385,7 +385,7 @@ function cot(){return Number(S.cotLive)||Number((cfg().cambio||{}).EUR)||5.6}
 const isWise=x=>x&&x.conta===WISE;
 const temWise=()=>(cfg().contas||[]).some(c=>c.id===WISE);
 function eurOf(x){return x.eur!=null?Number(x.eur)||0:(Number(x.valor)||0)/cot()}
-function saldoWiseEur(){const sd=cfg().saldos;if(!sd||!sd.wise)return null;let e=Number(sd.wise.eur)||0;const ts=sd.ts||0;
+function saldoWiseEur(){const sd=cfg().saldos;if(!sd||!sd.wise)return null;let e=Number(sd.wise.eur)||0;const ts=sd.wise.ts||sd.ts||0;
   for(const m in S.meses)for(const x of itens(m)){if(!(x.pagoEm>ts))continue;
     if(x.tipo==='transf'){if(x.de===WISE)e-=eurOf(x);if(x.para===WISE)e+=eurOf(x);continue}
     if(x.status!=='pago'||!isWise(x))continue;if(x.tipo==='receita')e+=eurOf(x);if(x.tipo==='despesa')e-=eurOf(x)}return e}
@@ -556,7 +556,7 @@ function alertas(m){const out=[],C=cfg(),y=m.slice(0,4);
   // orçamento
   for(const [key,lim] of Object.entries(C.orcamento||{})){const [e,cat]=key.split('|');if(S.esc!=='tudo'&&S.esc!==e)continue;const v=sum(itens(m).filter(x=>x.tipo==='despesa'&&x.ent===e&&x.cat===cat),x=>x.valor);if(lim&&v>lim)out.push(alertBox('warn',`${esc(cat)} passou do limite`,`${brl0(v)} de ${brl0(lim)} planejados (${e}).`))}
   // reserva
-  const g=C.metas.find(x=>x.ent==='PF');if(g&&S.esc!=='PJ'){const s=metaSaldo(g),mg=mediaGastosPF(m);if(mg){const cob=s/mg;if(cob<6)out.push(alertBox(cob<3?'warn':'info',`Sua reserva cobre ${cob.toLocaleString('pt-BR',{maximumFractionDigits:1})} meses de gastos pessoais`,`O recomendado para quem tem renda de autônomo é de 6 a 12 meses. Faltam ${brl0(Math.max(0,mg*6-s))} para 6 meses.`,'<a class="btn sm" href="#metas">Ver</a>'))}
+  const g=C.metas.find(x=>x.ent==='PF');if(g&&S.esc!=='PJ'){const s=reservaSaldo(g),mg=custoVidaTotal();if(mg){const cob=s/mg;if(cob<12)out.push(alertBox(cob<3?'warn':'info',`Sua reserva cobre ${cob.toLocaleString('pt-BR',{maximumFractionDigits:1})} de 12 meses do seu custo de vida`,`Faltam ${brl0(Math.max(0,metaAlvo(g)-s))} para os 12 meses.`,'<a class="btn sm" href="#metas">Ver</a>'))}
     if(calc(m,'PF').aportePF===0&&m<=curYM)out.push(alertBox('info','Nenhum aporte na reserva este mês',`A meta planejada é ${brl0(g.aporte)} por mês.`,`<button class="btn sm" data-act="aporte" data-meta="${esc(g.id)}">Aportar</button>`))}
   if(!out.length)out.push(alertBox('good','Nenhum alerta neste mês','Orçamentos, cartões e teto do MEI dentro do esperado.'));
   return `<div class="card"><div class="card-h"><h2>Atenção</h2><span class="meta">${out.length} ${out.length===1?'ponto':'pontos'}</span></div><div class="stack" style="gap:8px">${out.join('')}</div></div>`}
@@ -618,9 +618,9 @@ function insights(m){const out=[],C=cfg(),it=itens(m),prev=prevComItens(m,6),cur
   if(g&&g.aporte){const sobras=prev.slice(0,3).map(k=>{const q=calc(k,'tudo');return q.rec-q.desp});const sm=sobras.length?sum(sobras)/sobras.length:sobra;
     if(sm>0&&g.aporte>sm*1.1){const nova=Math.max(100,Math.floor(sm*.7/100)*100);add('info',`Sua meta de guardar ${brl0(g.aporte)}/mês não cabe hoje`,`Nos últimos meses sobrou em média ${brl0(sm)}. Uma meta que você consegue cumprir todo mês vale mais do que uma que nunca bate.`,`Meta possível: ${brl0(nova)}/mês`,`<button class="btn sm" data-act="meta-ajusta" data-v="${nova}">Usar ${brl0(nova)}</button>`)}}
   // reserva
-  if(g){const s=metaSaldo(g),mg=custoVidaPF(m);if(mg){const cob=s/mg;if(cob<6)add(cob<3?'crit':'warn',`Sua reserva cobre ${cob.toLocaleString('pt-BR',{maximumFractionDigits:1})} ${cob<2&&cob>=1?'mês':'meses'} de gastos`,`${brl0(s)} guardados para um custo de vida de ${brl0(mg)}/mês. Para quem vive de clientes, o seguro é ter de 6 a 12 meses.`,`Faltam ${brl0(Math.max(0,mg*6-s))} para 6 meses`,`<a class="btn sm" href="#metas">Ver reserva</a>`)}}
+  if(g){const R=reservaPlano();if(R&&R.cv&&R.meses<12)add(R.meses<3?'crit':'warn',`Prioridade: reserva cobre ${R.meses.toLocaleString('pt-BR',{maximumFractionDigits:1})} de 12 meses`,`${brl0(R.s)} guardados${g.incluiWise&&saldoWiseEur()!=null?' (com a Wise)':''} para um custo de vida de ${brl0(R.cv)}/mês. A meta é ${brl0(R.alvo)}.${R.n?` Guardando ${brl0(R.ritmo)} por mês${R.ritmo<R.ap?' (o que cabe hoje)':''}, chega lá em ${mLabel(addM(curYM,R.n)).toLowerCase()}.`:''}`,`Faltam ${brl0(R.falta)}`,`<a class="btn sm" href="#metas">Ver reserva</a>`)}
   // caixa da empresa
-  const sPJ=saldoConta('PJ');if(sPJ!=null){const cf=custoFixoPJ(),alvo=alvoCaixaPJ();if(sPJ<cf)add('crit',`Caixa da empresa abaixo de 1 mês de custos`,`${brl0(sPJ)} no caixa para ${brl0(cf)} de custos fixos por mês. Segure as retiradas extras até passar disso.`,'',`<a class="btn sm" href="#empresa">Ver caixa</a>`);else if(sPJ<alvo)add('info',`Caixa da empresa: ${brl0(sPJ)} de ${brl0(alvo)}`,`A meta é ter 3 meses de custos guardados na empresa. O que sobra depois da sua retirada fixa vai para lá.`,`${pct(sPJ/alvo)} do caminho`,`<a class="btn sm" href="#empresa">Ver caixa</a>`)}
+  const sPJ=saldoConta('PJ');if(sPJ!=null){const cf=custoFixoPJ(),alvo=alvoCaixaPJ();if(sPJ<cf)add(cfg().prioridade==='reserva'?'info':'crit',`Caixa da empresa abaixo de 1 mês de custos`,`${brl0(sPJ)} no caixa para ${brl0(cf)} de custos fixos por mês.${cfg().prioridade==='reserva'?' Sua prioridade agora é a reserva pessoal; na empresa, deixe só o bastante para pagar as contas do mês.':' Segure as retiradas extras até passar disso.'}`,'',`<a class="btn sm" href="#empresa">Ver caixa</a>`);else if(sPJ<alvo&&cfg().prioridade!=='reserva')add('info',`Caixa da empresa: ${brl0(sPJ)} de ${brl0(alvo)}`,`A meta é ter 3 meses de custos guardados na empresa. O que sobra depois da sua retirada fixa vai para lá.`,`${pct(sPJ/alvo)} do caminho`,`<a class="btn sm" href="#empresa">Ver caixa</a>`)}
   // retirada
   const cp=calc(m,'PJ'),rdm=retiradaDoMes(m);if(rdm&&cp.retir<rdm&&cp.rec>0&&(!cur||today.getDate()>=10))add('info',`Faça sua retirada de ${brl0(rdm-cp.retir)} da empresa`,rdm!==retiradaFixa()?`Valor especial deste mês. A partir de ${mLabel((cfg().proLabore||{}).inicio||addM(m,1))} vale a retirada fixa de ${brl0(retiradaFixa())}.`:`É o seu "salário" da empresa. Sai da PJ para a PF uma vez por mês, sempre o mesmo valor.`,'',`<button class="btn sm" data-act="retirada">Registrar</button>`);
   // MEI
@@ -664,15 +664,15 @@ function vPrev(){const ym=addM(curYM,1),P=prevCalc(ym),last=addM(ym,-1),lc=calc(
 /* ---------- INÍCIO ---------- */
 function tile(lab,val,sub,cls,extra){return `<div class="card tile ${cls||''}"><div class="lab">${lab}</div><div class="val">${val}</div>${sub?`<div class="sub">${sub}</div>`:''}${extra||''}</div>`}
 function vInicio(){const m=S.month,C=cfg(),c=calc(m,'tudo'),cp=calc(m,'PJ'),cf=calc(m,'PF'),sobra=c.rec-c.desp;
-  const sPJ=saldoConta('PJ'),sPF=saldoConta('PF'),g=reservaMeta(),res=g?metaSaldo(g):0,mg=custoVidaPF(m);
+  const sPJ=saldoConta('PJ'),sPF=saldoConta('PF'),g=reservaMeta(),res=g?reservaSaldo(g):0,mg=custoVidaTotal(),alvoR=g?metaAlvo(g):0;
   const pend=itens(m).filter(x=>x.tipo==='despesa'&&x.status!=='pago'),atr=pend.filter(x=>statusOf(x,m)==='atrasado');
   const alvo=alvoCaixaPJ(),ins=insights(m);
   const lucro=cp.rec-cp.desp,fixo=retiradaDoMes(m);
   return header(`Olá, Edson`,`${mLabel(m)} · o que importa agora`,monthCtl())+importBanner()+mig2Banner()+migBanner()+(!C.saldos?partidaCard():'')+
   `<div class="grid g4 tiles">
    ${tile(`Vai sobrar em ${MES3[Number(m.slice(5))-1]}`,brl0(sobra),`entrou ${brl0(c.rec-c.aReceber)} · saiu ${brl0(c.desp-c.aPagar)}`,sobra>=0?'t-good':'t-crit')}
-   ${tile('Caixa da empresa',sPJ==null?'—':brl0(sPJ),sPJ==null?'informe o saldo acima':(saldoWiseEur()!=null?`+ ${eur0(saldoWiseEur())} na Wise (≈ ${brl0(saldoWiseEur()*cot())})`:`meta: ${brl0(alvo)} (3 meses de custos)`),sPJ!=null&&sPJ<custoFixoPJ()?'t-crit':'',sPJ!=null&&alvo?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,sPJ/alvo*100))}%"></i></div>`:'')}
-   ${tile('Reserva pessoal',brl0(res),mg?`cobre ${(res/mg).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} meses do seu custo de vida (${brl0(mg)}/mês)`:'',mg&&res/mg<3?'t-warn':'')}
+   ${tile('Caixa da empresa',sPJ==null?'—':brl0(sPJ),sPJ==null?'informe o saldo acima':(wisePJ()&&saldoWiseEur()!=null?`+ ${eur0(saldoWiseEur())} na Wise (≈ ${brl0(saldoWiseEur()*cot())})`:`meta: ${brl0(alvo)} (3 meses de custos)`),sPJ!=null&&sPJ<custoFixoPJ()?'t-crit':'',sPJ!=null&&alvo?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,sPJ/alvo*100))}%"></i></div>`:'')}
+   ${tile('Reserva pessoal',brl0(res),mg?`cobre ${(res/mg).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1})} de 12 meses · meta ${brl0(alvoR)}`:'',mg&&res/mg<3?'t-warn':'',alvoR?`<div class="bar"><i style="width:${Math.max(0,Math.min(100,res/alvoR*100))}%"></i></div>`:'')}
    ${tile('Falta pagar',brl0(sum(pend,x=>x.valor)),pend.length?`${pend.length} ${pend.length>1?'contas':'conta'}${atr.length?` · <b class="neg">${atr.length} atrasada${atr.length>1?'s':''}</b>`:''}`:'tudo pago',atr.length?'t-crit':'',`<a class="tlink" href="#mes">Marcar contas →</a>`)}
   </div>
   ${(()=>{const ym=addM(curYM,1),P=prevCalc(ym);return `<a class="card prevcard" href="#previsao" style="margin-top:14px"><div><div class="small muted">Próximo mês · ${mLabel(ym).toLowerCase()}</div><div><b>Vai sobrar ${brl0(P.sobra)}</b> <span class="small muted">entra ${brl0(P.rec)} · sai ${brl0(P.desp)}</span></div></div><span class="btn sm">Ajustar previsão →</span></a>`})()}
@@ -830,24 +830,25 @@ function vCartoes(){const m=S.month,C=cfg();
   <div class="grid g2">${cards||'<div class="card empty">Cadastre seus cartões em Ajustes.</div>'}</div>`}
 
 /* ---------- METAS ---------- */
-function vMetas(){const C=cfg(),mg=mediaGastosPF(S.month);
-  const cards=C.metas.map(g=>{const s=metaSaldo(g),p=g.alvo?Math.min(1,s/g.alvo):0,falta=Math.max(0,g.alvo-s),meses=g.aporte>0?Math.ceil(falta/g.aporte):null;
+function vMetas(){const C=cfg(),mg=custoVidaTotal();
+  const cards=C.metas.map(g=>{const s=reservaSaldo(g),alvoG=metaAlvo(g),p=alvoG?Math.min(1,s/alvoG):0,falta=Math.max(0,alvoG-s),meses=g.aporte>0?Math.ceil(falta/g.aporte):null;
    const aps=[];for(const m of Object.keys(S.meses).sort().reverse()){for(const x of itens(m))if(x.tipo==='transf'&&(x.para==='meta:'+g.id||x.de==='meta:'+g.id))aps.push([m,x])}
    return `<div class="card goal"><div class="card-h" style="margin:0"><h2>${esc(g.nome)} ${badge(g.ent)}</h2><button class="btn sm ghost" data-act="meta-edit" data-id="${esc(g.id)}">Editar</button></div>
-   <div class="kpi"><div class="val">${brl(s)}</div><div class="det">de ${brl(g.alvo)} · ${pct(p)}</div></div>
+   <div class="kpi"><div class="val">${brl(s)}</div><div class="det">de ${brl(alvoG)} · ${pct(p)}${g.auto==='cv12'?' · 12 meses de custo de vida':''}</div></div>
    <div class="bar"><i style="width:${(p*100).toFixed(1)}%"></i></div>
    <div class="nums"><span>Aporte planejado: ${brl(g.aporte)}/mês</span><span>${falta?(meses?`chega lá em ~${meses} ${meses===1?'mês':'meses'} (${mLabel(addM(curYM,meses))})`:'defina um aporte'):'meta batida'}</span></div>
-   ${g.ent==='PF'&&mg?`<div class="small muted">Cobre ${(s/mg).toLocaleString('pt-BR',{maximumFractionDigits:1})} meses dos seus gastos pessoais (média ${brl0(mg)}).</div>`:''}
+   ${g.ent==='PF'&&mg?`<div class="small muted">Cobre ${(s/mg).toLocaleString('pt-BR',{maximumFractionDigits:1})} de 12 meses do seu custo de vida (${brl0(mg)}/mês).</div>`:''}
+   ${g.incluiWise&&saldoWiseEur()!=null?`<div class="small muted">Inclui ${brl0(wiseBRL())} que estão em euro na Wise (${eur0(saldoWiseEur())}).</div>`:''}
    ${g.nota?`<div class="small muted">${esc(g.nota)}</div>`:''}
    <div class="inline"><button class="btn sm pri" data-act="aporte" data-meta="${esc(g.id)}">Registrar aporte</button><button class="btn sm" data-act="resgate" data-meta="${esc(g.id)}">Registrar resgate</button></div>
    ${aps.length?`<div class="list small">${aps.slice(0,6).map(([m,x])=>`<div class="row" style="grid-template-columns:70px 1fr auto"><span class="d">${mShort(m)}</span><span>${esc(x.desc)}</span><span class="v ${x.de==='meta:'+g.id?'neg':'pos'}">${x.de==='meta:'+g.id?'−':'+'} ${brl(x.valor)}</span></div>`).join('')}</div>`:''}</div>`}).join('');
-  return header('Metas e reserva','O dinheiro guardado sai do mês como transferência, não como gasto.','<button class="btn pri" data-act="meta-novo">+ Nova meta</button>')+`<div class="grid g2">${wiseCardPF()}${cards||'<div class="card empty">Nenhuma meta ainda.</div>'}</div>`}
+  return header('Metas e reserva',C.prioridade==='reserva'?'Prioridade agora: guardar 12 meses do seu custo de vida.':'O dinheiro guardado sai do mês como transferência, não como gasto.','<button class="btn pri" data-act="meta-novo">+ Nova meta</button>')+`<div class="grid g2">${cvCard()}${cards||'<div class="card empty">Nenhuma meta ainda.</div>'}${wiseCardPF()}</div>`}
 
 /* ---------- AJUSTES DE NOVEMBRO: GenioDesk na PJ, Wise no CPF ---------- */
 function precisaMig2(){const C=cfg();if(!S.cfg||(C.mig&&C.mig.v2))return false;return C.clientes.some(k=>k.id==='geniodesk'||k.id==='infinity')}
 function mig2Banner(){if(!precisaMig2())return '';
   return `<div class="banner"><div><b>Wise no seu CPF</b><div class="small muted">O dinheiro da Infinity passa a contar como seu (PF), separado dos reais, e o repasse de R$ 500 sai em euro direto da Wise.</div></div><button class="btn pri" data-act="mig-v2">Aplicar</button></div>`}
-function migrarV2(){const C=S.cfg;if(!(C.mig&&C.mig.wise))migrarWise(true);
+function migrarV2(silent){const C=S.cfg;if(!(C.mig&&C.mig.wise))migrarWise(true);
   const ini=addM(curYM,1),touched=new Set();
   const w=(C.contas||[]).find(c=>c.id===WISE);if(w)w.ent='PF';
   for(const c of ['Repasses','Custo de câmbio'])if(!C.categorias.PF.despesa.includes(c))C.categorias.PF.despesa.push(c);
@@ -857,7 +858,7 @@ function migrarV2(){const C=S.cfg;if(!(C.mig&&C.mig.wise))migrarWise(true);
   for(const m of Object.keys(S.meses)){const d=S.meses[m];if(!d||!d.itens)continue;
     for(const x of d.itens){
       if(m>=curYM&&x.conta===WISE&&x.tipo!=='transf'&&x.ent!=='PF'){x.ent='PF';x.cat=x.tipo==='receita'?'Freela na PF':(x.cat==='Repasses'?'Repasses':x.cat);touched.add(m)}}}
-  C.mig=Object.assign({},C.mig,{wise:true,v2:true,v3:true});saveCfg();touched.forEach(saveMonth);S._keepScroll=true;render();
+  C.mig=Object.assign({},C.mig,{wise:true,v2:true,v3:true});saveCfg();touched.forEach(saveMonth);if(silent)return;S._keepScroll=true;render();
   toast('Pronto: a Wise agora é sua (PF) e o repasse sai em euro.')}
 // GenioDesk volta para a PF (pedido de 08/11): desfaz o que a versão anterior do botão tinha mudado
 function migrarV3(){const C=S.cfg;if(!C||!(C.mig&&C.mig.v2)||C.mig.v3)return;const ini=addM(curYM,1),touched=new Set();
@@ -875,6 +876,52 @@ function wiseCardPF(){if(!temWise()||wisePJ())return '';const wE=saldoWiseEur();
    <div><div class="small muted">Fica por mês</div><div style="font:800 26px var(--display)">≈ ${eur0((ent-sai)/cot())}</div><div class="small muted">entra ${brl0(ent)} da Infinity, sai ${brl0(sai)} de repasse em euro</div></div>
    <div><div class="small muted">Últimas conversões</div>${conv.length?conv.slice(0,4).map(([k,x])=>`<div class="small">${mShort(k)}: ${eur0(eurOf(x))} → ${brl0(x.valor)} <span class="muted">(R$ ${numIn(x.valor/eurOf(x))} por €)</span></div>`).join(''):'<div class="small muted">Nenhuma ainda.</div>'}</div></div>
    <div class="inline" style="margin-top:12px"><button class="btn pri" data-act="converter">Registrar conversão para real</button><span class="hint">Converta só quando precisar do dinheiro em reais. O que fica em euro conta como reserva sua.</span></div></div>`}
+
+/* ---------- CUSTO DE VIDA E RESERVA DE 12 MESES ---------- */
+const CV_ORDEM=['Moradia','Contas da casa','Mercado','Família','Saúde e cuidados','Assinaturas','Cartões','Outros'];
+function cvGrupo(r){if(isCard(r.conta)||r.cat==='Cartão (a detalhar)')return 'Cartões';if(['Saúde e treino','Cuidados pessoais','Saúde'].includes(r.cat))return 'Saúde e cuidados';return CV_ORDEM.includes(r.cat)?r.cat:'Outros'}
+function custoVidaLinhas(){const C=cfg(),V=(C.custoVida||{}).v||{},out=[];
+  for(const r of C.recorrentes){if(r.ent!=='PF'||r.tipo!=='despesa'||r.ativo===false||r.conta===WISE||recParc(r,curYM)===false)continue;
+    const k='r:'+r.id,base=Number(r.valor)||0;out.push({key:k,desc:r.desc,grupo:cvGrupo(r),base,valor:V[k]!=null?Number(V[k]):base,editado:V[k]!=null&&Number(V[k])!==base})}
+  const av=sum(itens(curYM).filter(x=>x.tipo==='despesa'&&!x.recId&&x.ent==='PF'&&x.conta!==WISE),x=>x.valor);
+  out.push({key:'avulsos',desc:'Gastos fora da lista (farmácia, delivery, presentes…)',grupo:'Outros',base:av,valor:V.avulsos!=null?Number(V.avulsos):av,editado:V.avulsos!=null});
+  for(const e of ((C.custoVida||{}).extras||[]))out.push({key:'x:'+e.id,extra:e.id,desc:e.desc,grupo:'Outros',base:0,valor:Number(e.valor)||0,editado:true});
+  return out}
+function custoVidaTotal(){return sum(custoVidaLinhas(),x=>x.valor)}
+function metaAlvo(g){return g&&g.auto==='cv12'?Math.round(custoVidaTotal()*12/100)*100:(Number(g&&g.alvo)||0)}
+function wiseBRL(){const e=saldoWiseEur();return e==null?0:e*cot()}
+function reservaSaldo(g){return metaSaldo(g)+(g&&g.incluiWise?wiseBRL():0)}
+function cvCard(){const L=custoVidaLinhas(),tot=sum(L,x=>x.valor),g=reservaMeta(),real=custoVidaPF(curYM);
+  const row=x=>`<div class="pv"><div class="t"><div>${esc(x.desc)}${x.editado?' <span class="badge" style="background:var(--accent-soft);color:var(--accent-text)">ajustado</span>':''}</div>${x.editado&&!x.extra?`<small>conta fixa: ${brl0(x.base)}</small>`:''}</div>
+    <input class="pvin" data-cv="${esc(x.key)}" value="${numIn(x.valor)}" inputmode="decimal" aria-label="Custo por mês: ${esc(x.desc)}">${x.extra?`<button class="more" data-act="cv-del" data-id="${esc(x.extra)}" aria-label="Remover">×</button>`:x.editado?`<button class="more" data-act="cv-reset" data-k="${esc(x.key)}" title="Voltar ao valor da conta fixa" aria-label="Desfazer ajuste">↺</button>`:'<span></span>'}</div>`;
+  const grupos=CV_ORDEM.map(gr=>[gr,L.filter(x=>x.grupo===gr)]).filter(([,ls])=>ls.length);
+  return `<div class="card" style="grid-column:1/-1;padding:0"><div class="sec-h" style="padding:16px 18px 6px"><h2>Seu custo de vida</h2><span class="meta">o que você precisa por mês para viver</span></div>
+   <div class="grid g3" style="padding:4px 18px 10px;gap:6px 22px;align-items:start">${grupos.map(([gr,ls])=>`<div><div class="small muted" style="display:flex;justify-content:space-between;margin:10px 0 2px"><b>${gr}</b><span>${brl0(sum(ls,x=>x.valor))}</span></div>${ls.map(row).join('')}</div>`).join('')}</div>
+   <div style="display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;justify-content:space-between;padding:12px 18px 16px;border-top:1px solid var(--line)">
+    <div><div class="small muted">Custo de vida por mês</div><div style="font:800 26px var(--display)">${brl0(tot)}</div>${real?`<div class="small muted">nos últimos 6 meses você gastou em média ${brl0(real)} como pessoa física</div>`:''}</div>
+    <div><div class="small muted">Reserva de 12 meses</div><div style="font:800 26px var(--display);color:var(--accent-text)">${brl0(tot*12)}</div><div class="small muted">12 × ${brl0(tot)}</div></div>
+    <form class="inline" data-form="cv-add"><input name="desc" placeholder="Faltou algo? Ex.: plano de saúde" required aria-label="Descrição" style="width:220px"><input name="valor" placeholder="Valor/mês" inputmode="decimal" required aria-label="Valor por mês" style="width:110px"><button class="btn sm">Adicionar</button></form></div></div>`}
+function reservaPlano(){const g=reservaMeta();if(!g)return null;const alvo=metaAlvo(g),s=reservaSaldo(g),cv=custoVidaTotal(),falta=Math.max(0,alvo-s),ap=Number(g.aporte)||0;
+  const pv=prevComItens(curYM,3),q0=calc(curYM,'tudo'),sm=pv.length?sum(pv.map(k=>{const q=calc(k,'tudo');return q.rec-q.desp}))/pv.length:q0.rec-q0.desp,cabe=sm>0?Math.max(100,Math.floor(sm*.7/100)*100):0,ritmo=ap>0?(cabe&&cabe<ap?cabe:ap):cabe;
+  return {g,alvo,s,cv,falta,ap,ritmo,meses:cv?s/cv:0,n:ritmo>0?Math.ceil(falta/ritmo):null}}
+// ajustes de 11/11: Alan e Isabela saem do dinheiro da Infinity na Wise, Wise com R$ 1.500, reserva de 12 meses
+function migrarV4(){const C=S.cfg;if(!C||(C.mig&&C.mig.v4)||!C.clientes.some(k=>k.id==='infinity'))return;
+  if(!(C.mig&&C.mig.wise))migrarWise(true);if(!C.mig.v2)migrarV2(true);
+  const touched=new Set();
+  for(const c of ['Repasses'])if(!C.categorias.PF.despesa.includes(c))C.categorias.PF.despesa.push(c);
+  const ra=C.recorrentes.find(r=>r.id==='r-repinf');if(ra){ra.desc='Alan (repasse Infinity)';ra.conta=WISE;ra.ent='PF';ra.cat='Repasses'}
+  const ri=C.recorrentes.find(r=>r.id==='r-isabella');if(ri){ri.conta=WISE;ri.ent='PF';ri.cat='Repasses';ri.desc='Isabela (freela Infinity)'}
+  for(const m of Object.keys(S.meses)){if(m<curYM)continue;const d=S.meses[m];if(!d||!d.itens)continue;
+    for(const x of d.itens){if(x.status==='pago')continue;
+      if(x.recId==='r-repinf'){x.desc='Alan (repasse Infinity)';touched.add(m)}
+      if(x.recId==='r-isabella'){x.conta=WISE;x.ent='PF';x.cat='Repasses';x.desc='Isabela (freela Infinity)';touched.add(m)}}}
+  if(C.saldos){C.saldos.wise={eur:Math.round(1500/cot()*100)/100,ts:Date.now(),brl:1500}}
+  let g=C.metas.find(x=>x.ent==='PF');if(!g){g={id:'reserva',nome:'',ent:'PF',alvo:0,saldoIni:15000,saldoTs:Date.now(),aporte:0,nota:''};C.metas.unshift(g)}
+  g.nome='Reserva de emergência';g.auto='cv12';g.incluiWise=true;
+  C.custoVida=C.custoVida||{v:{},extras:[]};C.custoVida.v=C.custoVida.v||{};
+  for(const r of C.recorrentes){if(r.ent!=='PF'||r.tipo!=='despesa')continue;if(/nubank/i.test(r.desc||'')&&C.custoVida.v['r:'+r.id]==null)C.custoVida.v['r:'+r.id]=2500;if(/caixa/i.test(r.desc||'')&&isCard(r.conta)&&C.custoVida.v['r:'+r.id]==null)C.custoVida.v['r:'+r.id]=1300}
+  C.prioridade='reserva';C.mig.v4=true;saveCfg();touched.forEach(saveMonth);
+  setTimeout(()=>toast('Custo de vida mapeado e reserva de 12 meses criada. Alan e Isabela agora saem da Wise.'),300)}
 
 /* ---------- IMPOSTOS (simulação) ---------- */
 // Regras de 2026 (as de 2027 ainda não saíram): Simples Nacional LC 123/2006, INSS 11% até o teto, IRPF com a redução da Lei 15.270/2025.
@@ -1062,12 +1109,12 @@ function recModal(orig,preset){let st=Object.assign({tipo:'despesa',ent:'PF',dia
      S.cfg=S.cfg||clone(DEFAULT_CFG);const i=S.cfg.recorrentes.findIndex(x=>x.id===r.id);if(i>=0)S.cfg.recorrentes[i]=r;else S.cfg.recorrentes.push(r);saveCfg();render();toast('Conta fixa salva. Ela entra nos próximos meses ao lançar as contas fixas.');return true},
    onDelete:orig?()=>{S.cfg.recorrentes=S.cfg.recorrentes.filter(x=>x.id!==orig.id);saveCfg();render();toast('Conta fixa removida. Lançamentos já feitos continuam.')}:null})}
 
-function metaModal(orig){const st=Object.assign({ent:'PF',saldoIni:0,alvo:0,aporte:0},orig?clone(orig):{});
+function metaModal(orig){const st=Object.assign({ent:'PF',saldoIni:0,alvo:0,aporte:0},orig?clone(orig):{});if(orig&&orig.auto)st.alvo=metaAlvo(orig);
   openModal({title:orig?'Editar meta':'Nova meta',body:()=>`<div class="fld"><label for="g-n">Nome</label><input id="g-n" name="nome" value="${esc(st.nome||'')}" required></div>
    <div class="two"><div class="fld"><label for="g-e">De quem é</label><select id="g-e" name="ent">${opt('PF','Pessoa física',st.ent)}${opt('PJ','Empresa',st.ent)}</select></div><div class="fld"><label for="g-a">Valor-alvo</label><input id="g-a" name="alvo" value="${numIn(st.alvo)}" inputmode="decimal"></div></div>
    <div class="two"><div class="fld"><label for="g-s">Saldo inicial (antes do sistema)</label><input id="g-s" name="saldoIni" value="${numIn(st.saldoIni)}" inputmode="decimal"></div><div class="fld"><label for="g-p">Aporte planejado por mês</label><input id="g-p" name="aporte" value="${numIn(st.aporte)}" inputmode="decimal"></div></div>
    <div class="fld"><label for="g-o">Observação</label><input id="g-o" name="nota" value="${esc(st.nota||'')}"></div>`,
-   onSubmit(o){if(!o.nome.trim()){toast('Dê um nome à meta.');return false}const g={id:orig?orig.id:uid('g'),nome:o.nome.trim(),ent:o.ent,alvo:parseBRL(o.alvo),saldoIni:parseBRL(o.saldoIni),aporte:parseBRL(o.aporte),nota:o.nota||''};
+   onSubmit(o){if(!o.nome.trim()){toast('Dê um nome à meta.');return false}const g=Object.assign({},orig||{},{id:orig?orig.id:uid('g'),nome:o.nome.trim(),ent:o.ent,alvo:parseBRL(o.alvo),saldoIni:parseBRL(o.saldoIni),aporte:parseBRL(o.aporte),nota:o.nota||''});if(orig&&orig.auto&&Math.abs(g.alvo-metaAlvo(orig))>1)delete g.auto;
      const i=S.cfg.metas.findIndex(x=>x.id===g.id);if(i>=0)S.cfg.metas[i]=g;else S.cfg.metas.push(g);saveCfg();render();return true},
    onDelete:orig?()=>{S.cfg.metas=S.cfg.metas.filter(x=>x.id!==orig.id);saveCfg();render()}:null})}
 
@@ -1087,7 +1134,7 @@ const TIPS=[
  ['Caixa da empresa hoje','Reais que a empresa tem agora, contando a partir do saldo que você informou. O euro da Wise aparece separado.'],
  ['Wise (euro)','Euros da empresa guardados na Wise. O valor em reais muda com a cotação do dia.'],
  ['Caixa da empresa','Dinheiro que é da empresa, separado do seu. A meta é ter 3 meses de custos guardados.'],
- ['Reserva pessoal','Seu dinheiro guardado para emergência. "Cobre X meses" é quanto tempo você vive só dela.'],
+ ['Reserva pessoal','Seu dinheiro guardado para emergência, somando o que está na Wise. A meta é 12 meses do seu custo de vida.'],
  ['Falta pagar','Contas deste mês que você ainda não marcou como pagas.'],
  ['Clientes pagaram','O que os clientes da empresa já pagaram neste mês.'],
  ['Custos (freelas','O que a empresa gasta: freelas, ferramentas e impostos.'],
@@ -1141,7 +1188,7 @@ document.addEventListener('click',e=>{const h=e.target.closest('.hlp');if(!h)ret
 
 /* ---------- render ---------- */
 function renderNav(){$('#nav').innerHTML=VIEWS.map(([id,l,d])=>id==='-'?`<div class="navsep">${l}</div>`:`<a href="#${id}" class="${S.view===id?'on':''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg><span>${l}</span></a>`).join('')}
-function render(){if(S.cfg&&S.cfg.mig&&S.cfg.mig.v2&&!S.cfg.mig.v3)migrarV3();renderNav();setSave();const el=$('#main');
+function render(){if(S.cfg&&S.cfg.mig&&S.cfg.mig.v2&&!S.cfg.mig.v3)migrarV3();if(S.ready&&S.cfg&&!(S.cfg.mig&&S.cfg.mig.v4))migrarV4();renderNav();setSave();const el=$('#main');
   if(S.err==='login'){el.innerHTML=loginView();return}
   if(S.err){el.innerHTML=`<div class="state"><h2>Não foi possível abrir seus dados</h2><p>${S.err==='nodb'?'Não foi possível carregar o sistema. Confira a internet e recarregue a página.':'O banco de dados respondeu com um erro ('+esc(S.err)+'). Recarregue a página em alguns instantes.'}</p></div>`;return}
   if(!S.ready){el.innerHTML=`<div class="state"><h2>${S.slow?'Ainda tentando conectar…':'Carregando suas finanças…'}</h2>${S.slow?'<p>Seus dados ainda não chegaram. Confira a internet; a página continua tentando sozinha.</p>':''}</div>`;return}
@@ -1188,6 +1235,8 @@ document.addEventListener('click',e=>{const t=e.target.closest('[data-act]');if(
    case 'importar-planilha':importarPlanilha();break;
    case 'mig-wise':migrarWise();break;
    case 'mig-v2':migrarV2();break;
+   case 'cv-reset':{const V=((S.cfg.custoVida||{}).v)||{};delete V[t.dataset.k];saveCfg();S._keepScroll=true;render();break}
+   case 'cv-del':{const C=S.cfg;if(C.custoVida){C.custoVida.extras=(C.custoVida.extras||[]).filter(e=>e.id!==t.dataset.id);saveCfg();S._keepScroll=true;render()}break}
    case 'imp-reset':if(S.cfg.imp){delete S.cfg.imp;saveCfg();S._keepScroll=true;render();toast('Simulação voltou aos valores do sistema.')}break;
    case 'pv-reset':{const ym=addM(curYM,1),P=(S.cfg.prev||{})[ym];if(P&&P.v){delete P.v[t.dataset.k];saveCfg();S._keepScroll=true;render()}break}
    case 'pv-del':{const ym=addM(curYM,1),P=(S.cfg.prev||{})[ym];if(P){P.extras=(P.extras||[]).filter(e=>e.id!==t.dataset.id);saveCfg();S._keepScroll=true;render()}break}
@@ -1203,6 +1252,7 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.closest('#modal')){if(t.dataset.re&&MODAL&&MODAL.onChange)MODAL.onChange();return}
   if(t.dataset.ck){const d=monthDoc(S.month),it=d.itens.find(x=>x.id===t.dataset.ck);if(it){it.status=t.checked?'pago':'pendente';if(t.checked)it.pagoEm=Date.now();else delete it.pagoEm;saveMonth(S.month);S._keepScroll=true;render()}return}
   if(t.id==='vin'){commitVal(t);return}
+  if(t.dataset.cv){const C=S.cfg;C.custoVida=C.custoVida||{v:{},extras:[]};C.custoVida.v=C.custoVida.v||{};const v=parseBRL(t.value),k=t.dataset.cv;if(k.startsWith('x:')){const e=(C.custoVida.extras||[]).find(z=>'x:'+z.id===k);if(e)e.valor=v}else C.custoVida.v[k]=v;saveCfg();S._keepScroll=true;render();return}
   if(t.dataset.pv){const ym=addM(curYM,1),C=S.cfg;C.prev=C.prev||{};const P=C.prev[ym]=C.prev[ym]||{v:{},extras:[]};P.v=P.v||{};const v=parseBRL(t.value);const k=t.dataset.pv;
     if(k.startsWith('x:')){const e=(P.extras||[]).find(z=>'x:'+z.id===k);if(e)e.valor=v}else P.v[k]=v;saveCfg();S._keepScroll=true;render();return}
   if(t.dataset.rot){const d=monthDoc(S.month);d.rotina=d.rotina||{};d.rotina[t.dataset.rot]=t.checked;saveMonth(S.month);S._keepScroll=true;render();return}
@@ -1226,6 +1276,7 @@ document.addEventListener('submit',e=>{const f=e.target;e.preventDefault();
     C.metas=C.metas.filter(x=>x.id!=='caixa-pj');C.proLabore=C.proLabore||{};if(!C.proLabore.fixo)C.proLabore.fixo=2000;C.caixaPJ=C.caixaPJ||{meses:3};
     S.editPartida=false;saveCfg();render();toast('Ponto de partida salvo. Empresa começa com '+brl0(vPJ)+'.');return}
   if(f.dataset.form==='pv-add'){const o=fdObj(f),ym=addM(curYM,1),C=S.cfg;const v=parseBRL(o.valor);if(!o.desc.trim()||!(v>0)){toast('Escreva o que é e o valor.');return}C.prev=C.prev||{};const P=C.prev[ym]=C.prev[ym]||{v:{},extras:[]};P.extras=P.extras||[];const g=guessCat(o.desc,o.ent,o.tipo);P.extras.push({id:uid('p'),desc:o.desc.trim(),valor:v,ent:o.ent,tipo:o.tipo,cat:g.cat});saveCfg();S._keepScroll=true;render();return}
+  if(f.dataset.form==='cv-add'){const o=fdObj(f),C=S.cfg,v=parseBRL(o.valor);if(!o.desc.trim()||!(v>0)){toast('Preencha o nome e o valor.');return}C.custoVida=C.custoVida||{v:{},extras:[]};C.custoVida.extras=C.custoVida.extras||[];C.custoVida.extras.push({id:uid('c'),desc:o.desc.trim(),valor:v});saveCfg();S._keepScroll=true;render();toast('Adicionado ao custo de vida.');return}
   if(f.dataset.form==='imp'){const o=fdObj(f),C=S.cfg;C.imp={pj:parseBRL(o.pj),inf:parseBRL(o.inf),ret:parseBRL(o.ret),contador:parseBRL(o.contador),anexo:o.anexo||'fatorR',cnae:String(o.cnae||'').trim().slice(0,20)};saveCfg();S._keepScroll=true;render();toast('Simulação atualizada.');return}
   if(f.dataset.form==='pjcfg'){const o=fdObj(f),C=S.cfg;C.proLabore=C.proLabore||{};C.proLabore.fixo=parseBRL(o.fixo);C.caixaPJ={meses:Math.max(1,Number(o.meses)||3)};saveCfg();S._keepScroll=true;render();toast('Regras do caixa da empresa salvas.');return}
   const k=f.dataset.form,o=fdObj(f);if(!S.cfg)return;const C=S.cfg;S._keepScroll=true;
